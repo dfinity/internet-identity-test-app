@@ -2,6 +2,7 @@
   "name": "@dfinity/internet-identity-test-app",
   "type": "module",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "@icp-sdk/auth": "^8.0.1",
     "@icp-sdk/core": "^5.4.0",

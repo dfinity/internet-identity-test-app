@@ -102,8 +102,8 @@ release with these assets:
 | `SHA256SUMS`           | `sha256sum` output covering the three assets above.                                           |
 
 ```bash
-git tag v1.2.3
-git push origin v1.2.3
+git tag release-1.2.3
+git push origin release-1.2.3
 ```
 
 Internet Identity consumes releases through a pinned tag in
@@ -111,3 +111,15 @@ Internet Identity consumes releases through a pinned tag in
 workflow in that repo opens a pull request whenever a newer tag is published
 here, so shipping a change is: merge here, tag here, then merge the bump PR in
 Internet Identity.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues are handled through the
+process in [SECURITY.md](SECURITY.md) — please do not report them as public
+issues.
+
+## License
+
+This project is licensed under the Internet Computer Community Source License
+v1.0, the same license as [Internet Identity](https://github.com/dfinity/internet-identity).
+See [LICENSE](LICENSE).
