@@ -32,11 +32,15 @@ jobs:
           test -f dist/manifest.json
           tar czf test_app_dist.tar.gz dist
 
+      # One `<asset>.sha256` per asset, matching the convention of the
+      # internet-identity releases that consume these.
       - name: Compute checksums
         run: |
           set -euo pipefail
-          sha256sum test_app.wasm test_app.did test_app_dist.tar.gz > SHA256SUMS
-          cat SHA256SUMS
+          for asset in test_app.wasm test_app.did test_app_dist.tar.gz; do
+            sha256sum "$asset" > "$asset.sha256"
+            cat "$asset.sha256"
+          done
 
       - name: Create GitHub release
         env:
@@ -48,6 +52,8 @@ jobs:
             --title "$TAG" \
             --generate-notes \
             test_app.wasm \
+            test_app.wasm.sha256 \
             test_app.did \
+            test_app.did.sha256 \
             test_app_dist.tar.gz \
-            SHA256SUMS
+            test_app_dist.tar.gz.sha256
