@@ -91,7 +91,7 @@ cargo test
 
 ## Releases
 
-Push a `release-X.Y.Z` tag and `.github/workflows/release.yml` publishes a GitHub
+Push a `release-<year>-<month>-<day>` tag and `.github/workflows/release.yml` publishes a GitHub
 release with these assets:
 
 | Asset                  | Contents                                                                                      |
@@ -99,7 +99,7 @@ release with these assets:
 | `test_app.wasm`        | The canister module.                                                                          |
 | `test_app.did`         | The Candid interface.                                                                         |
 | `test_app_dist.tar.gz` | The built frontend — a `dist/` directory, loaded as an unpacked Chrome extension by II's e2e. |
-| `SHA256SUMS`           | `sha256sum` output covering the three assets above.                                           |
+| `<asset>.sha256`       | `sha256sum` output for each asset above, verified by II's `scripts/fetch-test-app`.           |
 
 ```bash
 git tag release-1.2.3
