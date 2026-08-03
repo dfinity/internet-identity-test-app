@@ -1,7 +1,9 @@
 name: Release
 
-# Tagging `release-X.Y.Z` publishes the release Internet Identity consumes. The tag it
-# pins lives in `.github/versions/test-app` in the internet-identity repo.
+# Tagging `release-<year>-<month>-<day>` publishes the release Internet Identity
+# consumes. The tag it reads lives in `.github/versions/test-app` in the
+# internet-identity repo. Releases are dated rather than versioned: they are
+# consumed by II, not published to a registry.
 on:
   push:
     tags:

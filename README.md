@@ -91,7 +91,7 @@ cargo test
 
 ## Releases
 
-Push a `release-X.Y.Z` tag and `.github/workflows/release.yml` publishes a GitHub
+Push a `release-<year>-<month>-<day>` tag and `.github/workflows/release.yml` publishes a GitHub
 release with these assets:
 
 | Asset                  | Contents                                                                                      |
