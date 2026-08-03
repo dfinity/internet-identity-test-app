@@ -1,4 +1,12 @@
 [workspace]
+members = ["asset_util"]
+
+# Shared by the canister and `asset_util` so the workspace resolves a single
+# ic-cdk version.
+[workspace.dependencies]
+ic-cdk = "0.20"
+include_dir = "0.7"
+serde = "1"
 
 [package]
 name = "test_app"
@@ -12,11 +20,11 @@ path = "lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-asset_util = { path = "../../src/asset_util" }
+asset_util = { path = "asset_util" }
 candid = "0.10"
-ic-cdk = "0.20"
+ic-cdk = { workspace = true }
 ic-cdk-macros = "0.20"
-serde = "1"
+serde = { workspace = true }
 serde_bytes = "0.11"
 serde_json = "1"
-include_dir = "0.7"
+include_dir = { workspace = true }

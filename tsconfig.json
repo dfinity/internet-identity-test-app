@@ -1,9 +1,22 @@
 {
-  "extends": "../../tsconfig.base.json",
   "include": ["vite.config.ts", "./src"],
   "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["ES2022", "DOM"],
+    "module": "esnext",
+    "strict": true,
+    "target": "es2018",
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "noFallthroughCasesInSwitch": true,
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
     "jsx": "react-jsx",
-    "types": ["node", "vite/client"],
-    "composite": true
+    "types": ["node", "vite/client"]
   }
 }

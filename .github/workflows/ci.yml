@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+jobs:
+  # Produces exactly the artifacts a release publishes, so a PR fails here
+  # rather than at tag time.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/bootstrap
+
+      - run: npm ci --no-audit --no-fund
+
+      # build.sh bundles the frontend into dist/ and compiles the canister,
+      # which embeds dist/ via include_dir!.
+      - name: Build canister and frontend
+        run: ./build.sh
+
+      - name: Check the frontend build produced the extension bundle
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test -f dist/callback.html
+          test -f dist/manifest.json
+          test -f dist/background.js
+
+      - run: sha256sum test_app.wasm
+
+      - name: Upload test app wasm
+        uses: actions/upload-artifact@v4
+        with:
+          name: test_app.wasm
+          path: ./test_app.wasm
+
+      - name: Upload test app frontend
+        uses: actions/upload-artifact@v4
+        with:
+          name: test_app_dist
+          path: ./dist
+
+  rust-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/bootstrap
+
+      # The canister embeds dist/ via include_dir!, so it must exist before
+      # cargo can even check the crate. Dummy files keep this job independent
+      # of the frontend build.
+      - name: Create dummy assets
+        run: |
+          mkdir -p dist
+          touch dist/index.html dist/index.js dist/index.css
+
+      - name: Cargo fmt
+        run: cargo fmt --all --check
+
+      # Run clippy twice (once without tests) so it accurately reports dead
+      # code in the non-test configuration. `manual_range_contains` is
+      # disabled because `a >= x && a < y` reads more clearly than
+      # `(x..y).contains(a)`.
+      - name: Cargo clippy
+        run: |
+          cargo clippy -- -D clippy::all -D warnings -A clippy::manual_range_contains
+          cargo clippy --all-targets -- -D clippy::all -D warnings -A clippy::manual_range_contains
+
+      - name: Cargo test
+        run: cargo test
+
+      # Fails if Cargo.lock is out of date.
+      - name: Cargo lockfile check
+        run: cargo update --workspace --locked
+
+  frontend-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Run tsc
+        run: npm run check
+
+      - name: Check formatting
+        run: npm run format-check

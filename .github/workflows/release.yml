@@ -1,0 +1,51 @@
+name: Release
+
+# Tagging `vX.Y.Z` publishes the release Internet Identity consumes. The tag it
+# pins lives in `.github/versions/test-app` in the internet-identity repo.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/bootstrap
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Build canister and frontend
+        run: ./build.sh
+
+      # Internet Identity's Playwright e2e loads dist/ as an unpacked Chrome
+      # extension, so the frontend ships as an asset alongside the wasm.
+      - name: Package the frontend
+        run: |
+          set -euo pipefail
+          test -f dist/manifest.json
+          tar czf test_app_dist.tar.gz dist
+
+      - name: Compute checksums
+        run: |
+          set -euo pipefail
+          sha256sum test_app.wasm test_app.did test_app_dist.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            test_app.wasm \
+            test_app.did \
+            test_app_dist.tar.gz \
+            SHA256SUMS

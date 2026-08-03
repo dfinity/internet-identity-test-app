@@ -1,0 +1,50 @@
+name: "bootstrap"
+description: Set up the Rust toolchain, ic-wasm and Node used to build the test app
+inputs:
+  ic-wasm-version:
+    description: "ic-wasm version to install (matches the version Internet Identity builds with)"
+    required: false
+    default: "0.8.5"
+runs:
+  using: "composite"
+  steps:
+    # The Rust channel and the wasm target both come from rust-toolchain.toml,
+    # so the toolchain is pinned in exactly one place.
+    - name: Install Rust toolchain
+      shell: bash
+      run: |
+        set -euo pipefail
+        channel=$(sed -n 's/^channel[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' rust-toolchain.toml)
+        echo "using rust version '$channel'"
+        rustup toolchain install "$channel" \
+          --profile minimal \
+          --component clippy \
+          --component rustfmt \
+          --target wasm32-unknown-unknown
+        rustup default "$channel"
+        rustc --version
+        cargo --version
+        cargo clippy --version
+        cargo fmt --version
+
+    # Cache only ic-wasm, not the cargo target dir: clean builds are cheap here
+    # and a stale target dir hides genuine rebuild problems.
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/ic-wasm
+        key: ic-wasm-${{ runner.os }}-${{ inputs.ic-wasm-version }}
+
+    - name: Install ic-wasm
+      shell: bash
+      env:
+        IC_WASM_VERSION: ${{ inputs.ic-wasm-version }}
+      run: |
+        set -euo pipefail
+        if [ "$(ic-wasm --version 2>/dev/null || true)" != "ic-wasm $IC_WASM_VERSION" ]; then
+          cargo install ic-wasm --version "$IC_WASM_VERSION" --locked --force
+        fi
+        ic-wasm --version
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .node-version

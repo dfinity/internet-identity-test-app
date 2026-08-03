@@ -1,4 +1,4 @@
-import { VcFlowRequestWire } from "@dfinity/internet-identity-vc-api";
+import { VcFlowRequestWire } from "./vcApi";
 import { bytesToHex } from "@noble/hashes/utils";
 import type { Identity, SignIdentity } from "@icp-sdk/core/agent";
 import { Actor, HttpAgent } from "@icp-sdk/core/agent";

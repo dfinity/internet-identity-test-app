@@ -1,0 +1,95 @@
+version: 2
+
+# Non-major version updates for every ecosystem are consolidated into a single
+# weekly pull request via `multi-ecosystem-groups`. Security updates are handled
+# separately per ecosystem via `groups` with `applies-to: security-updates`, so
+# advisory-driven bumps arrive as one grouped PR per ecosystem instead of one PR
+# per dependency.
+multi-ecosystem-groups:
+  weekly-version-updates:
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Etc/UTC
+    labels:
+      - dependencies
+
+updates:
+  # ── cargo ──────────────────────────────────────────────
+  # A single directory: the canister crate at the root and the `asset_util`
+  # workspace member share one Cargo.lock.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+    patterns:
+      - "*"
+    multi-ecosystem-group: weekly-version-updates
+    groups:
+      cargo-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # ── npm ────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: scope
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+    patterns:
+      - "*"
+    multi-ecosystem-group: weekly-version-updates
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # ── github-actions ─────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+    patterns:
+      - "*"
+    multi-ecosystem-group: weekly-version-updates
+    groups:
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"

@@ -19,7 +19,7 @@ const OUTDATED_INVALID_CERTIFICATE_HEADER: &str = ":2dn3omR0cmVlgwGDAYMBgwJIY2Fu
 
 thread_local! {
     static ASSETS: RefCell<CertifiedAssets> = RefCell::new(CertifiedAssets::default());
-    static ALTERNATIVE_ORIGINS_MODE: RefCell<AlternativeOriginsMode> = RefCell::new(CertifiedContent);
+    static ALTERNATIVE_ORIGINS_MODE: RefCell<AlternativeOriginsMode> = const { RefCell::new(CertifiedContent) };
 }
 
 #[query]

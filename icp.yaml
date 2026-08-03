@@ -5,4 +5,4 @@ canisters:
         - type: script
           commands:
             - "./build.sh"
-            - "cp test_app.wasm \"$ICP_WASM_OUTPUT_PATH\""
+            - 'cp test_app.wasm "$ICP_WASM_OUTPUT_PATH"'

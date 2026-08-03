@@ -1,10 +1,31 @@
-import {
-  getReplicaHost,
-  readCanisterId,
-} from "@dfinity/internet-identity-vite-plugins";
+import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+
+/** Origin of the locally running replica's HTTP gateway. */
+const getReplicaHost = (): string => {
+  try {
+    const stdout = execSync("icp network status --json");
+    const status = JSON.parse(stdout.toString());
+    const port = new URL(status.gateway_url).port;
+    return `http://127.0.0.1:${port}`;
+  } catch (e) {
+    throw Error(`Could not get replica port, is the replica running? ${e}`);
+  }
+};
+
+const readCanisterId = ({ canisterName }: { canisterName: string }): string => {
+  const command = `icp canister status ${canisterName} --id-only`;
+  try {
+    const stdout = execSync(command);
+    return stdout.toString().trim();
+  } catch (e) {
+    throw Error(
+      `Could not get canister ID for '${canisterName}' with command '${command}', was the canister deployed? ${e}`,
+    );
+  }
+};
 
 const rewriteRoute = (pathAndParams: string): string => {
   let queryParamsString = `?`;
