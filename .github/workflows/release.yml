@@ -1,11 +1,11 @@
 name: Release
 
-# Tagging `vX.Y.Z` publishes the release Internet Identity consumes. The tag it
+# Tagging `release-X.Y.Z` publishes the release Internet Identity consumes. The tag it
 # pins lives in `.github/versions/test-app` in the internet-identity repo.
 on:
   push:
     tags:
-      - "v*"
+      - "release-*"
 
 permissions:
   contents: write
