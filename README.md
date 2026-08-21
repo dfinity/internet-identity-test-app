@@ -30,6 +30,20 @@ release assets of a pinned tag; see [Releases](#releases).
       - Wrong format
       - Missing certification
       - Respond with redirect
+- Support for the asset `/.well-known/ii-app-metadata` to test how II renders
+  permissionless app metadata (name, description, logo)
+  - Nothing is served at that path until `update_app_metadata` is called, so by
+    default II falls back to whatever it already knows about the origin
+  - The document is set as an opaque string, so a test can serve a valid one as
+    well as malformed JSON, an oversized payload, or out-of-range field values
+  - The asset can be customized to be:
+    - Certified, i.e. served as written
+    - A redirect, to check that II does not follow one — it points at
+      `/.well-known/evil-app-metadata`, a document that would be valid if read
+  - Logo fixtures on the same origin, referenced from the document's `logo`:
+    - `/app-logo.png` — the accepted case: a 128×128 raster logo
+    - `/app-logo.svg` — a vector logo, which II rejects
+    - `/app-logo-oversized.png` — 5000×5000, past II's 4096-per-axis cap
 - Serves `/.well-known/ii-auth-callbacks`, the ICRC-167 auth-callback allow-list.
   It always covers this canister's own gateway origins; extra origins can be
   declared through the install argument (`auth_callbacks`), which is how the II

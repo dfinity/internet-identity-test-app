@@ -112,6 +112,8 @@
         <button data-action="authenticate" id="signinBtn">Sign In</button>
         <h3>/.well-known/ii-alternative-origins</h3>
         <div id="alternativeOrigins"></div>
+        <h3>/.well-known/ii-app-metadata</h3>
+        <div id="appMetadata"></div>
         <h3>Principal:</h3>
         <div data-role="principal" id="principal"></div>
         <h3>Authentication Method:</h3>
@@ -192,6 +194,37 @@
           </div>
           <input type="text" id="newAlternativeOrigins" />
           <button id="updateNewAlternativeOrigins">Update Value</button>
+        </div>
+        <div>
+          <label for="newAppMetadata" style="display: inline-block">
+            Set new value for /.well-known/ii-app-metadata:
+          </label>
+          <div>
+            <input
+              type="radio"
+              id="appMetadataCertified"
+              name="appMetadataMode"
+              value="certified"
+              checked
+            />
+            <label for="appMetadataCertified">Certified</label>
+          </div>
+          <div>
+            <input
+              type="radio"
+              id="appMetadataRedirect"
+              name="appMetadataMode"
+              value="redirect"
+            />
+            <label for="appMetadataRedirect">Redirect</label>
+            <input
+              type="text"
+              id="appMetadataRedirectLocation"
+              value="/.well-known/evil-app-metadata"
+            />
+          </div>
+          <textarea id="newAppMetadata"></textarea>
+          <button id="updateNewAppMetadata">Update Value</button>
         </div>
       </section>
       <section>

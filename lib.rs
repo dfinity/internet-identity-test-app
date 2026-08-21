@@ -14,6 +14,12 @@ const EVIL_ALTERNATIVE_ORIGINS_PATH: &str = "/.well-known/evil-alternative-origi
 // callback page (`/callback`), so II's URL transport accepts delivering a
 // response back to it.
 const AUTH_CALLBACKS_PATH: &str = "/.well-known/ii-auth-callbacks";
+// Permissionless app display metadata (name, description, logo) read by II
+// when it renders its authorization screens. Not served until a test sets it
+// through `update_app_metadata`, so by default II falls back to whatever it
+// knows about this origin on its own.
+const APP_METADATA_PATH: &str = "/.well-known/ii-app-metadata";
+const EVIL_APP_METADATA_PATH: &str = "/.well-known/evil-app-metadata";
 const EMPTY_ALTERNATIVE_ORIGINS: &str = r#"{"alternativeOrigins":[]}"#;
 const OUTDATED_INVALID_CERTIFICATE_HEADER: &str = ":2dn3omR0cmVlgwGDAYMBgwJIY2FuaXN0ZXKDAYMBggRYIF7eYW50QXA1hAANBQ4J616Ekjch0ihDxnNGwvlxxIKDgwGCBFggH4wduBeihx+gd8Oe2KvzyQxp/PEe6ustjHJNlVhLbmaDAkqAAAAAABAAAwEBgwGDAYMCTmNlcnRpZmllZF9kYXRhggNYIIA3JGAjACCVyCTmsRmhhlZDI5oDZZkhGVMbpCIFTEejggRYIIMJ950nCB4emD2uvICtY5WfLhcOzb2BaqH4EvUGTX2xggRYIFfnBG3quMbImRDu81QLZKq0ADXD75bQIoPHA2y4JRQVggRYIETEKmiZ1Lflrx8sIiDUOqBdb7X+mJ5+kEturndxJYzeggRYINPKhi8ZGTDLJJGHdaSlL3lxf8JFGiBHe3FVp4y/myCvggRYIIZ883QyMwhObp/SFU8xtXu8w8xGgwEWfkJYAWqC9dNSgwGCBFgg49iYnFVeAADyzEwGNNe…Bcfct/T4ZWVYbJe/P3gUbLOS8n9uDAklodHRwX2V4cHKDAYMBgwGCBFgggaSHI9J56LbuKjb58O8AWYlQNqTWZBxB58L7Y6u9j2ODAksud2VsbC1rbm93boMBggRYIJY8druSGXKdr/LHH3Kr/F+Vo9VwgluKJZS6HxkTrIeUgwJWaWktYWx0ZXJuYXRpdmUtb3JpZ2luc4MCQzwkPoMCWCBiB64Pds+kxrd7O3KKhS3TAcooPTqycnGLKWuiy3dP6IMCQIMCWCCaryvDtyyZdDWHqiLmkc63lZuPrBF2Tt6ULsG0LUkWcIIDQIIEWCAYA1f5ooQFb7bDDkKE0QhYJLkfsn2j1GCIGJvp8r8ucYIEWCB28Uo/B0pARPP3FnDUBj83i4NpGPehI4IGGI2I2iOQhg==:, expr_path=:2dn3hGlodHRwX2V4cHJrLndlbGwta25vd252aWktYWx0ZXJuYXRpdmUtb3JpZ2luc2M8JD4=:, version=2";
 
@@ -83,6 +89,34 @@ fn update_alternative_origins(alternative_origins: String, mode: AlternativeOrig
     update_root_hash()
 }
 
+/// Function to set the asset /.well-known/ii-app-metadata.
+///
+/// The document is taken as an opaque string rather than typed fields: II's
+/// tests need to serve malformed JSON, oversized payloads and out-of-range
+/// values, none of which a typed argument could express.
+///
+/// # Arguments
+/// * app_metadata: new value of this asset. The content type will always be set to application/json.
+/// * mode: enum that allows changing the behaviour of the asset. See [AppMetadataMode].
+#[update]
+fn update_app_metadata(app_metadata: String, mode: AppMetadataMode) {
+    ASSETS.with_borrow_mut(|assets| match mode {
+        AppMetadataMode::CertifiedContent => assets.certify_asset(
+            Asset {
+                url_path: APP_METADATA_PATH.to_string(),
+                content: app_metadata.as_bytes().to_vec(),
+                encoding: ContentEncoding::Identity,
+                content_type: ContentType::JSON,
+            },
+            &static_headers(),
+        ),
+        AppMetadataMode::Redirect { location } => assets
+            .certify_redirect(APP_METADATA_PATH, location.as_str(), &static_headers())
+            .expect("Failed to certify app metadata redirect"),
+    });
+    update_root_hash()
+}
+
 pub type HeaderField = (String, String);
 
 #[derive(Clone, Debug, CandidType, Deserialize)]
@@ -104,11 +138,20 @@ pub struct HttpResponse {
 /// Enum of the available asset behaviours of /.well-known/ii-alternative-origins:
 /// * CertifiedContent: Valid certification on the payload. This mode is required to successfully use one of the listed alternative origins.
 /// * UncertifiedContent: No `IC-Certificate` header will be sent back with the response. This mode can be used to validate that II rejects uncertified assets when validating alternative origins.
-/// * Redirect: This will set the response status code to 302 and a `Location` header with the value provided. This mode can be used to validate that II rejects redirects when validating alternative origins.
+/// * Redirect: This will set the response status code to 303 and a `Location` header with the value provided. This mode can be used to validate that II rejects redirects when validating alternative origins.
 #[derive(Clone, Debug, CandidType, Deserialize)]
 pub enum AlternativeOriginsMode {
     CertifiedContent,
     UncertifiedContent,
+    Redirect { location: String },
+}
+
+/// Enum of the available asset behaviours of /.well-known/ii-app-metadata:
+/// * CertifiedContent: Valid certification on the payload, i.e. the document is served as written.
+/// * Redirect: This will set the response status code to 303 and a `Location` header with the value provided. This mode can be used to validate that II does not follow redirects when reading app metadata.
+#[derive(Clone, Debug, CandidType, Deserialize)]
+pub enum AppMetadataMode {
+    CertifiedContent,
     Redirect { location: String },
 }
 
@@ -227,6 +270,17 @@ fn init_assets(alternative_origins: String, extra_auth_callbacks: Vec<String>) {
     assets.push(Asset {
         url_path: EVIL_ALTERNATIVE_ORIGINS_PATH.to_string(),
         content: b"{\"alternativeOrigins\":[\"https://evil.com\"]}".to_vec(),
+        encoding: ContentEncoding::Identity,
+        content_type: ContentType::JSON,
+    });
+
+    // convenience asset to have a URL to point to when testing with the
+    // redirect app metadata behaviour. A document that would be perfectly valid
+    // if it were read, so a test can tell "II didn't follow the redirect" apart
+    // from "II read the redirect target and rejected it".
+    assets.push(Asset {
+        url_path: EVIL_APP_METADATA_PATH.to_string(),
+        content: br#"{"name":"Evil App","description":"Served from the redirect target"}"#.to_vec(),
         encoding: ContentEncoding::Identity,
         content_type: ContentType::JSON,
     });
