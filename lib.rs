@@ -274,7 +274,7 @@ fn init_assets(alternative_origins: String, extra_auth_callbacks: Vec<String>) {
         content_type: ContentType::JSON,
     });
 
-    // convenience asset to have an url to point to when testing with the
+    // convenience asset to have a URL to point to when testing with the
     // redirect app metadata behaviour. A document that would be perfectly valid
     // if it were read, so a test can tell "II didn't follow the redirect" apart
     // from "II read the redirect target and rejected it".

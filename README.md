@@ -41,11 +41,9 @@ release assets of a pinned tag; see [Releases](#releases).
     - A redirect, to check that II does not follow one — it points at
       `/.well-known/evil-app-metadata`, a document that would be valid if read
   - Logo fixtures on the same origin, referenced from the document's `logo`:
-    | Asset | What it tests |
-    | --- | --- |
-    | `/app-logo.png` | The accepted case: a 128×128 raster logo |
-    | `/app-logo.svg` | A vector logo, which II rejects |
-    | `/app-logo-oversized.png` | 5000×5000, past II's 4096-per-axis cap |
+    - `/app-logo.png` — the accepted case: a 128×128 raster logo
+    - `/app-logo.svg` — a vector logo, which II rejects
+    - `/app-logo-oversized.png` — 5000×5000, past II's 4096-per-axis cap
 - Serves `/.well-known/ii-auth-callbacks`, the ICRC-167 auth-callback allow-list.
   It always covers this canister's own gateway origins; extra origins can be
   declared through the install argument (`auth_callbacks`), which is how the II
