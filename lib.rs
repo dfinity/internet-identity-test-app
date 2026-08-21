@@ -138,7 +138,7 @@ pub struct HttpResponse {
 /// Enum of the available asset behaviours of /.well-known/ii-alternative-origins:
 /// * CertifiedContent: Valid certification on the payload. This mode is required to successfully use one of the listed alternative origins.
 /// * UncertifiedContent: No `IC-Certificate` header will be sent back with the response. This mode can be used to validate that II rejects uncertified assets when validating alternative origins.
-/// * Redirect: This will set the response status code to 302 and a `Location` header with the value provided. This mode can be used to validate that II rejects redirects when validating alternative origins.
+/// * Redirect: This will set the response status code to 303 and a `Location` header with the value provided. This mode can be used to validate that II rejects redirects when validating alternative origins.
 #[derive(Clone, Debug, CandidType, Deserialize)]
 pub enum AlternativeOriginsMode {
     CertifiedContent,
@@ -148,7 +148,7 @@ pub enum AlternativeOriginsMode {
 
 /// Enum of the available asset behaviours of /.well-known/ii-app-metadata:
 /// * CertifiedContent: Valid certification on the payload, i.e. the document is served as written.
-/// * Redirect: This will set the response status code to 302 and a `Location` header with the value provided. This mode can be used to validate that II does not follow redirects when reading app metadata.
+/// * Redirect: This will set the response status code to 303 and a `Location` header with the value provided. This mode can be used to validate that II does not follow redirects when reading app metadata.
 #[derive(Clone, Debug, CandidType, Deserialize)]
 pub enum AppMetadataMode {
     CertifiedContent,
