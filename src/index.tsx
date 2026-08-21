@@ -37,6 +37,9 @@ const whoamiBtn = document.getElementById("whoamiBtn") as HTMLButtonElement;
 const updateAlternativeOriginsBtn = document.getElementById(
   "updateNewAlternativeOrigins",
 ) as HTMLButtonElement;
+const updateAppMetadataBtn = document.getElementById(
+  "updateNewAppMetadata",
+) as HTMLButtonElement;
 const openIiWindowBtn = document.getElementById(
   "openIiWindowBtn",
 ) as HTMLButtonElement;
@@ -69,6 +72,10 @@ const alternativeOriginsEl = document.getElementById(
 const newAlternativeOriginsEl = document.getElementById(
   "newAlternativeOrigins",
 ) as HTMLInputElement;
+const appMetadataEl = document.getElementById("appMetadata") as HTMLDivElement;
+const newAppMetadataEl = document.getElementById(
+  "newAppMetadata",
+) as HTMLTextAreaElement;
 const principalEl = document.getElementById("principal") as HTMLDivElement;
 const authnMethodEl = document.querySelector(
   '[data-role="authn-method"]',
@@ -157,6 +164,10 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     Redirect: IDL.Record({ location: IDL.Text }),
     CertifiedContent: IDL.Null,
   });
+  const AppMetadataMode = IDL.Variant({
+    Redirect: IDL.Record({ location: IDL.Text }),
+    CertifiedContent: IDL.Null,
+  });
   const CallerAttributes = IDL.Record({
     signer: IDL.Opt(IDL.Principal),
     data: IDL.Vec(IDL.Nat8),
@@ -168,6 +179,7 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
       [],
       [],
     ),
+    update_app_metadata: IDL.Func([IDL.Text, AppMetadataMode], [], []),
     whoami: IDL.Func([], [IDL.Principal], ["query"]),
     caller_attributes: IDL.Func([], [CallerAttributes], []),
   });
@@ -277,6 +289,24 @@ const updateDelegationView = ({
 const updateAlternativeOriginsView = async () => {
   const response = await fetch("/.well-known/ii-alternative-origins");
   alternativeOriginsEl.innerText = await response.text();
+};
+
+const updateAppMetadataView = async () => {
+  const response = await fetch("/.well-known/ii-app-metadata", {
+    redirect: "manual",
+  });
+  // Reported as a byte count rather than as the document itself: the documents
+  // under test include control characters, unbalanced bidi isolates and 8 KiB
+  // payloads, none of which survive a round trip through `innerText` intact
+  // enough for a test to match on. Nothing is served at this path until
+  // `update_app_metadata` is called, and a redirect is opaque to `fetch` under
+  // `redirect: "manual"`, so both of those are reported as themselves.
+  appMetadataEl.innerText =
+    response.type === "opaqueredirect"
+      ? "<redirect>"
+      : response.status === 200
+        ? `served: ${(await response.blob()).size} bytes`
+        : `<not served: HTTP ${response.status}>`;
 };
 
 function addMessageElement({
@@ -603,7 +633,38 @@ const init = async () => {
     await actor.update_alternative_origins(newAlternativeOriginsEl.value, mode);
     await updateAlternativeOriginsView();
   };
+
+  updateAppMetadataBtn.onclick = async () => {
+    const canisterId = Principal.fromText(readCanisterId());
+    const httpAgent = await HttpAgent.create({
+      host: hostUrlEl.value,
+      shouldFetchRootKey: true,
+    });
+    const actor = Actor.createActor(idlFactory, {
+      agent: httpAgent,
+      canisterId,
+    });
+    const modeSelection = (
+      document.querySelector(
+        'input[name="appMetadataMode"]:checked',
+      ) as HTMLInputElement
+    ).value;
+    let mode: { Redirect: { location: string } } | { CertifiedContent: null } =
+      { CertifiedContent: null };
+    if (modeSelection === "redirect") {
+      const location = (
+        document.getElementById(
+          "appMetadataRedirectLocation",
+        ) as HTMLInputElement
+      ).value;
+      mode = { Redirect: { location } };
+    }
+    await actor.update_app_metadata(newAppMetadataEl.value, mode);
+    await updateAppMetadataView();
+  };
+
   await updateAlternativeOriginsView();
+  await updateAppMetadataView();
 };
 
 window.addEventListener("DOMContentLoaded", init);

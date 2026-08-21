@@ -88,6 +88,14 @@ export default defineConfig(({ command, mode }) => ({
               target: getReplicaHost(),
               rewrite: rewriteRoute,
             },
+            "/.well-known/ii-app-metadata": {
+              target: getReplicaHost(),
+              rewrite: rewriteRoute,
+            },
+            "/.well-known/evil-app-metadata": {
+              target: getReplicaHost(),
+              rewrite: rewriteRoute,
+            },
           },
         },
 }));

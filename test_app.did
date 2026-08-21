@@ -20,6 +20,11 @@ type AlternativeOriginsMode = variant {
     Redirect: record { location: text; };
 };
 
+type AppMetadataMode = variant {
+    CertifiedContent;
+    Redirect: record { location: text; };
+};
+
 type CallerAttributes = record {
     /// Canister that signed the attributes attached to the caller's
     /// request (e.g. the Internet Identity canister). Empty when the
@@ -40,6 +45,11 @@ type InitArg = record {
 service : (opt InitArg) -> {
   whoami: () -> (principal) query;
   update_alternative_origins: (text, AlternativeOriginsMode) -> ();
+  /// Sets /.well-known/ii-app-metadata, the permissionless app display
+  /// metadata II reads. The document is an opaque string so tests can serve
+  /// malformed, oversized and out-of-range documents as well as valid ones.
+  /// Nothing is served at that path until this is called.
+  update_app_metadata: (text, AppMetadataMode) -> ();
   http_request: (request: HttpRequest) -> (HttpResponse) query;
   /// Echoes the caller's signed attributes back to the client so e2e
   /// tests can verify the round-trip from II → frontend →
