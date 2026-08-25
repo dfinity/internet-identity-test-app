@@ -45,7 +45,10 @@ const DEFAULT_CHOICE: StorageChoice = {
   cookieDomain: "",
   iiUrl: "",
   iiCanisterId: "",
-  useIcrc25: false,
+  // Matches the `checked` attribute in index.html, which is there so the box is
+  // right before this code runs. This is what applies it from then on, so the two
+  // have to agree.
+  useIcrc25: true,
 };
 
 export const readStorageChoice = (): StorageChoice => {
