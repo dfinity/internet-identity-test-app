@@ -104,12 +104,20 @@ const refreshable = (
 };
 
 /** Milliseconds until the earliest expiry in a chain, which is when it stops working. */
-const expiryMs = (chain: DelegationChain): number =>
-  Math.min(
-    ...chain.delegations.map(({ delegation }) =>
-      Number(delegation.expiration / BigInt(1_000_000)),
-    ),
-  );
+/**
+ * Milliseconds until the earliest expiry in a chain, which is when it stops
+ * working, or `undefined` for a chain carrying no delegations. `Math.min()` over
+ * an empty list is `Infinity`, which formats as an em dash and reads as "nothing
+ * here" rather than as the anomaly it is.
+ */
+const expiryMs = (chain: DelegationChain): number | undefined =>
+  chain.delegations.length === 0
+    ? undefined
+    : Math.min(
+        ...chain.delegations.map(({ delegation }) =>
+          Number(delegation.expiration / BigInt(1_000_000)),
+        ),
+      );
 
 /** The principal an application's canisters see, derived from the account key. */
 const accountPrincipal = (session: Session): Principal =>
@@ -130,6 +138,19 @@ const formatRemaining = (ms: number): string => {
     .map(([value, unit]) => `${value}${unit}`)
     .join(" ");
 };
+
+/**
+ * Renders a countdown, or says what is wrong when there is no expiry to render.
+ * A chain that exists but carries nothing is a state worth naming, since this
+ * panel exists to make such a thing visible rather than blank.
+ */
+const describeExpiry = (
+  expiry: number | undefined,
+  chain: DelegationChain,
+): string =>
+  expiry === undefined
+    ? `held, but it carries no delegations (${chain.delegations.length})`
+    : formatRemaining(expiry - Date.now());
 
 const shortPrincipal = (principal: Principal): string => {
   const text = principal.toText();
@@ -319,7 +340,7 @@ export const mountSessionPanel = (options: {
       "sessionExpiry",
       stored === null
         ? "-"
-        : formatRemaining(expiryMs(stored.chain) - Date.now()),
+        : describeExpiry(expiryMs(stored.chain), stored.chain),
     );
 
     // `getDelegation()` falls back to the session chain when nothing has been
@@ -327,17 +348,19 @@ export const mountSessionPanel = (options: {
     const chain = heldChain(identity);
     const sessionExpiry = stored === null ? undefined : expiryMs(stored.chain);
     const chainExpiry = chain === undefined ? undefined : expiryMs(chain);
+    // A chain whose expiry cannot be read is still a chain, and saying so beats
+    // reporting it as the session chain it is not.
     const delegation =
-      chainExpiry !== undefined && chainExpiry !== sessionExpiry
-        ? chain
-        : undefined;
+      chain !== undefined && chainExpiry !== sessionExpiry ? chain : undefined;
     setText(
       "delegationExpiry",
       stored === null
         ? "-"
         : delegation === undefined
-          ? "none held"
-          : formatRemaining(expiryMs(delegation) - Date.now()),
+          ? chain === undefined
+            ? "none held"
+            : "none held (the identity is presenting the session chain)"
+          : describeExpiry(chainExpiry, delegation),
     );
     setText("delegationChanges", String(delegationChanges));
 
@@ -346,15 +369,27 @@ export const mountSessionPanel = (options: {
         lastDelegationExpiry = undefined;
         log("delegation gone");
       }
+    } else if (chainExpiry === undefined) {
+      // Worth a line of its own: a delegation that carries nothing is not a
+      // state any requirement describes, so it is either a bug here or upstream.
+      if (lastDelegationExpiry !== 0) {
+        lastDelegationExpiry = 0;
+        log(
+          `holding a delegation that carries no delegations (${delegation.delegations.length})`,
+        );
+      }
     } else {
-      const expiry = expiryMs(delegation);
       if (lastDelegationExpiry === undefined) {
-        lastDelegationExpiry = expiry;
-        log(`holding a delegation until ${new Date(expiry).toISOString()}`);
-      } else if (expiry !== lastDelegationExpiry) {
-        lastDelegationExpiry = expiry;
+        lastDelegationExpiry = chainExpiry;
+        log(
+          `holding a delegation until ${new Date(chainExpiry).toISOString()}`,
+        );
+      } else if (chainExpiry !== lastDelegationExpiry) {
+        lastDelegationExpiry = chainExpiry;
         delegationChanges += 1;
-        log(`delegation replaced, now until ${new Date(expiry).toISOString()}`);
+        log(
+          `delegation replaced, now until ${new Date(chainExpiry).toISOString()}`,
+        );
       }
     }
 
