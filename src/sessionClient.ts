@@ -8,7 +8,6 @@ import {
   LocalIdentityStorage,
   LocalSessionStorage,
   SessionGoneError,
-  SessionIdentity,
   type IdentityStorage,
   type Session,
   type SessionStorage,
@@ -29,12 +28,24 @@ export interface StorageChoice {
   session: "local" | "cookie";
   identity: "idb" | "local";
   cookieDomain: string;
+  /**
+   * The provider a session belongs to, kept so a second tab of this origin is
+   * configured the same way. Without it a fresh tab falls back to the default
+   * identity provider and refuses the stored session, because the chain names a
+   * canister the client was never told about.
+   */
+  iiUrl: string;
+  iiCanisterId: string;
+  useIcrc25: boolean;
 }
 
 const DEFAULT_CHOICE: StorageChoice = {
   session: "local",
   identity: "idb",
   cookieDomain: "",
+  iiUrl: "",
+  iiCanisterId: "",
+  useIcrc25: false,
 };
 
 export const readStorageChoice = (): StorageChoice => {
@@ -60,6 +71,34 @@ export interface SessionClientParams {
   transport?: "window" | "redirect";
   choice: StorageChoice;
 }
+
+/**
+ * The chain an identity is currently presenting, or `undefined`.
+ *
+ * Read by shape rather than by `instanceof`: the class this module imports and the
+ * one `AuthClient` constructs are not guaranteed to be the same object, and a
+ * failed identity check would show as a missing delegation rather than an error.
+ */
+const heldChain = (
+  identity: Identity | undefined,
+): DelegationChain | undefined => {
+  const candidate = identity as
+    | { getDelegation?: () => DelegationChain }
+    | undefined;
+  return typeof candidate?.getDelegation === "function"
+    ? candidate.getDelegation()
+    : undefined;
+};
+
+/** An identity that can be asked to replace its app delegation now. */
+const refreshable = (
+  identity: Identity | undefined,
+): { refresh: () => Promise<void> } | undefined => {
+  const candidate = identity as { refresh?: () => Promise<void> } | undefined;
+  return typeof candidate?.refresh === "function"
+    ? (candidate as { refresh: () => Promise<void> })
+    : undefined;
+};
 
 /** Milliseconds until the earliest expiry in a chain, which is when it stops working. */
 const expiryMs = (chain: DelegationChain): number =>
@@ -166,8 +205,21 @@ export const mountSessionPanel = (options: {
   onClient: (handle: SessionClientHandle) => void;
 }): { log: (message: string) => void } => {
   const entries: string[] = [];
+  let lastMessage: string | undefined;
+  let repeats = 0;
   const log = (message: string) => {
     const stamp = new Date().toISOString().slice(11, 23);
+    // The panel polls, so a persistent failure would otherwise arrive twice a
+    // second and bury everything before it.
+    if (message === lastMessage) {
+      repeats += 1;
+      entries[0] = `${stamp}  ${message}  (x${repeats + 1})`;
+      const node = document.getElementById("sessionLog");
+      if (node !== null) node.textContent = entries.slice(0, 200).join("\n");
+      return;
+    }
+    lastMessage = message;
+    repeats = 0;
     entries.unshift(`${stamp}  ${message}`);
     const node = document.getElementById("sessionLog");
     if (node !== null) node.textContent = entries.slice(0, 200).join("\n");
@@ -184,6 +236,9 @@ export const mountSessionPanel = (options: {
     identity:
       control("identityStorageLocal")?.checked === true ? "local" : "idb",
     cookieDomain: control("sessionCookieDomain")?.value.trim() ?? "",
+    iiUrl: control("iiUrl")?.value.trim() ?? "",
+    iiCanisterId: control("iiCanisterId")?.value.trim() ?? "",
+    useIcrc25: control("useIcrc25")?.checked === true,
   });
 
   const stored = readStorageChoice();
@@ -197,6 +252,17 @@ export const mountSessionPanel = (options: {
   setChecked("identityStorageLocal", stored.identity === "local");
   const domainEl = control("sessionCookieDomain");
   if (domainEl !== null) domainEl.value = stored.cookieDomain;
+
+  // Restored before the client is built, so it is built from the same provider
+  // the stored session was obtained from.
+  const setValue = (id: string, value: string) => {
+    const node = control(id);
+    if (node !== null && value !== "") node.value = value;
+  };
+  setValue("iiUrl", stored.iiUrl);
+  setValue("iiCanisterId", stored.iiCanisterId);
+  const icrc25El = control("useIcrc25");
+  if (icrc25El !== null) icrc25El.checked = stored.useIcrc25;
 
   const build = (): SessionClientHandle =>
     createSessionClient({
@@ -240,15 +306,22 @@ export const mountSessionPanel = (options: {
         : formatRemaining(expiryMs(stored.chain) - Date.now()),
     );
 
+    // `getDelegation()` falls back to the session chain when nothing has been
+    // minted, so a chain expiring with the session is not an app delegation.
+    const chain = heldChain(identity);
+    const sessionExpiry = stored === null ? undefined : expiryMs(stored.chain);
+    const chainExpiry = chain === undefined ? undefined : expiryMs(chain);
     const delegation =
-      identity instanceof SessionIdentity
-        ? identity.getDelegation()
+      chainExpiry !== undefined && chainExpiry !== sessionExpiry
+        ? chain
         : undefined;
     setText(
       "delegationExpiry",
-      delegation === undefined
+      stored === null
         ? "-"
-        : formatRemaining(expiryMs(delegation) - Date.now()),
+        : delegation === undefined
+          ? "none held"
+          : formatRemaining(expiryMs(delegation) - Date.now()),
     );
     setText("delegationChanges", String(delegationChanges));
 
@@ -324,6 +397,12 @@ export const mountSessionPanel = (options: {
 
   // Every control the client is built from. Text fields settle on change rather
   // than on each keystroke, which is what makes rebuilding on edit reasonable.
+  // Persisted but not rebuilt on: the toggle selects which sign-in path the page
+  // takes, which the client is not built from.
+  document.getElementById("useIcrc25")?.addEventListener("change", () => {
+    writeStorageChoice(choiceFromControls());
+  });
+
   for (const id of [
     "iiUrl",
     "iiCanisterId",
@@ -377,12 +456,13 @@ export const mountSessionPanel = (options: {
   });
 
   onClick("sessionRefreshBtn", async () => {
-    if (!(identity instanceof SessionIdentity)) {
-      log("no session identity to refresh");
+    const target = refreshable(identity);
+    if (target === undefined) {
+      log("this identity cannot be asked to refresh");
       return;
     }
     log("refresh requested");
-    await identity.refresh();
+    await target.refresh();
     log("refresh returned");
   });
 
