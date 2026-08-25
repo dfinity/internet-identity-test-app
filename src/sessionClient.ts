@@ -160,6 +160,7 @@ const shortPrincipal = (principal: Principal): string => {
 export interface SessionClientHandle {
   client: AuthClient;
   sessionStorage: SessionStorage;
+  identityStorage: IdentityStorage;
   params: SessionClientParams;
 }
 
@@ -210,7 +211,7 @@ export const createSessionClient = (
     idleOptions: { disableIdle: true },
   });
 
-  return { client, sessionStorage, params };
+  return { client, sessionStorage, identityStorage, params };
 };
 
 /**
@@ -309,6 +310,7 @@ export const mountSessionPanel = (options: {
   };
 
   let identity: Identity | undefined;
+  let sessionKeyPrincipal: Principal | undefined;
   let lastDelegationExpiry: number | undefined;
   let delegationChanges = 0;
 
@@ -327,14 +329,14 @@ export const mountSessionPanel = (options: {
       "sessionAccountPrincipal",
       stored === null ? "-" : accountPrincipal(stored).toText(),
     );
-    const sessionPrincipal = identity?.getPrincipal();
+    // Not `identity.getPrincipal()`: a session identity answers that from the
+    // account key, so it would repeat the field above. This is the key the
+    // session chain was signed to, which is what II resolves a session from.
     setText(
       "sessionSessionPrincipal",
-      sessionPrincipal === undefined
+      stored === null || sessionKeyPrincipal === undefined
         ? "-"
-        : sessionPrincipal.isAnonymous()
-          ? "anonymous"
-          : sessionPrincipal.toText(),
+        : sessionKeyPrincipal.toText(),
     );
     setText(
       "sessionExpiry",
@@ -348,18 +350,17 @@ export const mountSessionPanel = (options: {
     const chain = heldChain(identity);
     const sessionExpiry = stored === null ? undefined : expiryMs(stored.chain);
     const chainExpiry = chain === undefined ? undefined : expiryMs(chain);
-    // A chain whose expiry cannot be read is still a chain, and saying so beats
-    // reporting it as the session chain it is not.
+    // Until something is minted the identity presents an empty chain rooted at the
+    // account key, which is how it answers for the account principal with nothing
+    // in hand. An empty chain therefore means no app delegation, not a broken one.
     const delegation =
-      chain !== undefined && chainExpiry !== sessionExpiry ? chain : undefined;
+      chain !== undefined && chain.delegations.length > 0 ? chain : undefined;
     setText(
       "delegationExpiry",
       stored === null
         ? "-"
         : delegation === undefined
-          ? chain === undefined
-            ? "none held"
-            : "none held (the identity is presenting the session chain)"
+          ? "none held"
           : describeExpiry(chainExpiry, delegation),
     );
     setText("delegationChanges", String(delegationChanges));
@@ -370,14 +371,7 @@ export const mountSessionPanel = (options: {
         log("delegation gone");
       }
     } else if (chainExpiry === undefined) {
-      // Worth a line of its own: a delegation that carries nothing is not a
-      // state any requirement describes, so it is either a bug here or upstream.
-      if (lastDelegationExpiry !== 0) {
-        lastDelegationExpiry = 0;
-        log(
-          `holding a delegation that carries no delegations (${delegation.delegations.length})`,
-        );
-      }
+      // Unreachable: a non-empty chain always has an earliest expiry.
     } else {
       if (lastDelegationExpiry === undefined) {
         lastDelegationExpiry = chainExpiry;
@@ -414,6 +408,13 @@ export const mountSessionPanel = (options: {
   const refresh = async () => {
     try {
       identity = await handle.client.getIdentity();
+      const key = await handle.identityStorage.get();
+      sessionKeyPrincipal =
+        key === null
+          ? undefined
+          : Principal.selfAuthenticating(
+              new Uint8Array(key.getPublicKey().toDer()),
+            );
     } catch (error) {
       log(
         `could not read the identity: ${
