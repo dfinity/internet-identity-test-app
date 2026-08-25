@@ -203,6 +203,12 @@ export const mountSessionPanel = (options: {
   readProvider: () => ProviderParams;
   /** Hands the page the client it should sign in with, including after a rebuild. */
   onClient: (handle: SessionClientHandle) => void;
+  /**
+   * Whatever identity the page itself holds. The legacy sign-in path does not go
+   * through this client, so without this an app that is signed in that way is
+   * indistinguishable here from one that is not signed in at all.
+   */
+  appIdentity?: () => Identity | undefined;
 }): { log: (message: string) => void } => {
   const entries: string[] = [];
   let lastMessage: string | undefined;
@@ -285,7 +291,14 @@ export const mountSessionPanel = (options: {
   const render = () => {
     const stored = handle.sessionStorage.get();
 
-    setText("sessionState", stored === null ? "no session" : "signed in");
+    setText(
+      "sessionState",
+      stored !== null
+        ? "signed in"
+        : options.appIdentity?.() !== undefined
+          ? "signed in without a session — the legacy protocol path does not create one"
+          : "no session",
+    );
     setText(
       "sessionAccountPrincipal",
       stored === null ? "-" : accountPrincipal(stored).toText(),

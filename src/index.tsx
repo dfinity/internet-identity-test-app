@@ -496,6 +496,7 @@ const init = async () => {
     onClient: (handle) => {
       sessionHandle = handle;
     },
+    appIdentity: () => delegationIdentity,
   });
   log("page loaded, session client built");
   if (redirect !== undefined && sessionHandle !== undefined) {
