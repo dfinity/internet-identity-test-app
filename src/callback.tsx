@@ -8,7 +8,7 @@
  * results back to the homepage in the hash. Generic — it reads/writes only via
  * the shared `redirectFlow` codec.
  */
-import { AuthClient } from "@icp-sdk/auth/client";
+import { createSessionClient, readStorageChoice } from "./sessionClient";
 import {
   decodeSnapshot,
   encodeResults,
@@ -32,11 +32,12 @@ const run = async (): Promise<void> => {
   const queryInputs = inputsFromSnapshot(
     decodeSnapshot(window.location.search),
   );
-  const authClient = new AuthClient({
+  const { client: authClient } = createSessionClient({
     transport: "redirect",
-    identityProvider: queryInputs.iiUrl !== "" ? queryInputs.iiUrl : undefined,
+    authorizeUrl: queryInputs.iiUrl,
+    canisterId: queryInputs.iiCanisterId,
     derivationOrigin: queryInputs.derivationOrigin,
-    idleOptions: { disableIdle: true },
+    choice: readStorageChoice(),
   });
 
   // Journal the whole form snapshot so it stays stable across the redirect and

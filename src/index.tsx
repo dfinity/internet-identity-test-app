@@ -22,7 +22,13 @@ import {
   Icrc3Attributes,
 } from "./auth";
 import { formatIcrc3Attributes } from "./icrc3";
-import { AuthClient } from "@icp-sdk/auth/client";
+import {
+  createSessionClient,
+  mountSessionPanel,
+  readStorageChoice,
+  writeStorageChoice,
+  type SessionClientHandle,
+} from "./sessionClient";
 import {
   CALLBACK_PATH,
   decodeResults,
@@ -130,6 +136,7 @@ let iiProtocolTestWindow: Window | undefined;
 
 // The identity set by the authentication
 let delegationIdentity: DelegationIdentity | undefined = undefined;
+let sessionHandle: SessionClientHandle | undefined = undefined;
 
 // The most recently received ICRC-3 attribute bundle, kept around so the
 // "Send attributes to canister" button can wrap the delegation identity in
@@ -428,10 +435,17 @@ const restoreForm = (form: FormSnapshot): void => {
 // On the return leg of a redirect sign-in, the callback page hands results back
 // in the hash. Recover the identity from the persisted session (as any redirect
 // relying party would) and render, reusing the same view as the window flow.
-const renderRedirectResultIfPresent = async () => {
+/**
+ * Restores the form from a redirect return, and reports what still needs the
+ * session client. The identity is read separately because the client is built
+ * from the form this restores, so it does not exist yet.
+ */
+const restoreRedirectResultIfPresent = ():
+  | { attributes?: { data: string; signature: string } }
+  | undefined => {
   const results = decodeResults(window.location.hash);
   if (results === undefined) {
-    return;
+    return undefined;
   }
   // Drop the hash so a reload doesn't re-render stale results.
   window.history.replaceState(
@@ -446,10 +460,16 @@ const renderRedirectResultIfPresent = async () => {
   }
   if (results.error !== undefined) {
     showError(results.error);
-    return;
+    return undefined;
   }
-  const authClient = new AuthClient({ idleOptions: { disableIdle: true } });
-  const identity = await authClient.getIdentity();
+  return { attributes: results.attributes };
+};
+
+const renderRedirectIdentity = async (
+  handle: SessionClientHandle,
+  results: { attributes?: { data: string; signature: string } },
+) => {
+  const identity = await handle.client.getIdentity();
   if (identity instanceof DelegationIdentity) {
     delegationIdentity = identity;
   }
@@ -465,8 +485,56 @@ const renderRedirectResultIfPresent = async () => {
   });
 };
 
+/**
+ * The storage controls, which are read before the client exists and so take
+ * effect on the next load rather than this one.
+ */
+const mountStorageControls = () => {
+  const radio = (id: string) => document.getElementById(id) as HTMLInputElement;
+  const domainEl = document.getElementById(
+    "sessionCookieDomain",
+  ) as HTMLInputElement;
+  const choice = readStorageChoice();
+
+  radio("sessionStorageLocal").checked = choice.session === "local";
+  radio("sessionStorageCookie").checked = choice.session === "cookie";
+  radio("identityStorageIdb").checked = choice.identity === "idb";
+  radio("identityStorageLocal").checked = choice.identity === "local";
+  domainEl.value = choice.cookieDomain;
+
+  const applyBtn = document.getElementById(
+    "sessionApplyStorageBtn",
+  ) as HTMLButtonElement;
+  applyBtn.onclick = () => {
+    writeStorageChoice({
+      session: radio("sessionStorageCookie").checked ? "cookie" : "local",
+      identity: radio("identityStorageLocal").checked ? "local" : "idb",
+      cookieDomain: domainEl.value.trim(),
+    });
+    window.location.reload();
+  };
+};
+
 const init = async () => {
-  await renderRedirectResultIfPresent();
+  // The form is restored first: the session client is built from it, and a
+  // redirect return carries the values the outbound load was configured with.
+  const redirect = restoreRedirectResultIfPresent();
+
+  const handle = createSessionClient({
+    authorizeUrl: iiUrlEl.value,
+    canisterId: iiCanisterIdEl.value.trim(),
+    derivationOrigin:
+      derivationOriginEl.value !== "" ? derivationOriginEl.value : undefined,
+    choice: readStorageChoice(),
+  });
+  sessionHandle = handle;
+  mountSessionPanel(handle);
+  mountStorageControls();
+  handle.log("page loaded, session client built");
+  if (redirect !== undefined) {
+    await renderRedirectIdentity(handle, redirect);
+  }
+
   const userAgentElement = document.getElementById("userAgent") as HTMLElement;
   userAgentElement.innerText = navigator.userAgent;
   const isTelegramElement = document.getElementById(
@@ -504,8 +572,13 @@ const init = async () => {
       : false;
 
     try {
+      if (sessionHandle === undefined) {
+        showError("the session client is not ready");
+        return;
+      }
       const result = await authWithII({
         url: iiUrlEl.value,
+        authClient: sessionHandle.client,
         maxTimeToLive,
         derivationOrigin,
         allowPinAuthentication,

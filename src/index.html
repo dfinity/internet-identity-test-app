@@ -131,7 +131,7 @@
         <h3>Canister-echoed attributes (decoded):</h3>
         <div>
           <label for="iiCanisterId" style="display: inline-block; width: 200px"
-            >II canister id (signer):
+            >II canister id:
           </label>
           <input
             type="text"
@@ -143,6 +143,93 @@
         <h3>Canister-echoed attributes (raw):</h3>
         <pre id="canisterEchoedAttributesRaw"></pre>
         <button id="sendAttributesBtn">Send attributes to canister</button>
+      </section>
+
+      <section>
+        <h2>Session</h2>
+        <p>
+          Needs an Internet Identity that answers
+          <code>ii_session_delegation</code> and exposes the
+          <code>app_*</code> session methods. The provider URL, canister id and
+          storage below are read when the page loads, so changing them takes a
+          reload.
+        </p>
+        <h3>State:</h3>
+        <div id="sessionState">-</div>
+        <h3>Account principal (what an app's canisters see):</h3>
+        <div data-role="account-principal" id="sessionAccountPrincipal">-</div>
+        <h3>Session principal (what the session key signs as):</h3>
+        <div data-role="session-principal" id="sessionSessionPrincipal">-</div>
+        <h3>Session expires in:</h3>
+        <div id="sessionExpiry">-</div>
+        <h3>App delegation expires in:</h3>
+        <div id="delegationExpiry">-</div>
+        <h3>Delegation replacements observed:</h3>
+        <div id="delegationChanges">0</div>
+        <h3>Cross-subdomain hint cookie:</h3>
+        <div id="sessionHint">none</div>
+        <div>
+          <button id="sessionSignOutBtn">
+            Sign out (ends it at the canister)
+          </button>
+          <button id="sessionRefreshBtn">Refresh now</button>
+          <button id="sessionOpenTabBtn">Open a second tab</button>
+          <button id="sessionSilentBtn">Silent re-auth (prompt=none)</button>
+        </div>
+        <h3>Storage</h3>
+        <div>
+          <label style="display: inline-block; width: 200px"
+            >Session storage:</label
+          >
+          <label
+            ><input
+              type="radio"
+              name="sessionStorageChoice"
+              id="sessionStorageLocal"
+            />localStorage</label
+          >
+          <label
+            ><input
+              type="radio"
+              name="sessionStorageChoice"
+              id="sessionStorageCookie"
+            />localStorage + hint cookie</label
+          >
+        </div>
+        <div>
+          <label
+            for="sessionCookieDomain"
+            style="display: inline-block; width: 200px"
+            >Hint cookie domain:</label
+          >
+          <input
+            type="text"
+            id="sessionCookieDomain"
+            placeholder="e.g. example.com (this host or one above it)"
+          />
+        </div>
+        <div>
+          <label style="display: inline-block; width: 200px"
+            >Identity storage:</label
+          >
+          <label
+            ><input
+              type="radio"
+              name="identityStorageChoice"
+              id="identityStorageIdb"
+            />IndexedDB</label
+          >
+          <label
+            ><input
+              type="radio"
+              name="identityStorageChoice"
+              id="identityStorageLocal"
+            />localStorage</label
+          >
+        </div>
+        <button id="sessionApplyStorageBtn">Apply storage and reload</button>
+        <h3>Log:</h3>
+        <pre id="sessionLog"></pre>
       </section>
 
       <section>

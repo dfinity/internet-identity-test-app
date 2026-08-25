@@ -120,6 +120,20 @@ git tag release-1.2.3
 git push origin release-1.2.3
 ```
 
+### Pre-releases
+
+A `prerelease-<year>-<month>-<day>` tag publishes the same assets, marked as a
+GitHub pre-release. Use it when the app needs an Internet Identity that is not
+released yet: the scheduled bump workflow described below finds new versions
+through `/releases/latest`, which is by definition the latest release that is
+_not_ a pre-release, so a pre-release can be pinned by hand on an II branch
+without moving II's `main` onto it.
+
+```bash
+git tag prerelease-1.2.3
+git push origin prerelease-1.2.3
+```
+
 Internet Identity consumes releases through a pinned tag in
 `.github/versions/test-app`, fetched by `scripts/fetch-test-app`. A scheduled
 workflow in that repo opens a pull request whenever a newer tag is published

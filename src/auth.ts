@@ -43,6 +43,7 @@ export const authWithII = async ({
   allowPinAuthentication,
   derivationOrigin,
   sessionIdentity,
+  authClient,
   autoSelectionPrincipal,
   useIcrc25,
   requestAttributes,
@@ -55,6 +56,8 @@ export const authWithII = async ({
   derivationOrigin?: string;
   autoSelectionPrincipal?: string;
   sessionIdentity: SignIdentity;
+  /** The page's client, which owns the session and its storage. */
+  authClient: AuthClient;
   useIcrc25?: boolean;
   requestAttributes?: string[];
   useIcrc3Attributes?: boolean;
@@ -102,12 +105,6 @@ export const authWithII = async ({
       }
     }
 
-    const authClient = new AuthClient({
-      identity: sessionIdentity,
-      identityProvider: url_,
-      derivationOrigin,
-      idleOptions: { disableIdle: true },
-    });
     const nonce = icrc3Nonce ?? crypto.getRandomValues(new Uint8Array(32));
 
     const [identity, icrc3Attributes] = await Promise.all([
