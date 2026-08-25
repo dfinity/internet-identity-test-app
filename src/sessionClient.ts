@@ -410,6 +410,20 @@ export const mountSessionPanel = (options: {
 
   // Every control the client is built from. Text fields settle on change rather
   // than on each keystroke, which is what makes rebuilding on edit reasonable.
+  // Persisted on every keystroke, so a value typed and never blurred still
+  // survives a reload. Rebuilding stays on `change`, since rebuilding the client
+  // per keystroke would be absurd.
+  for (const id of [
+    "iiUrl",
+    "iiCanisterId",
+    "derivationOrigin",
+    "sessionCookieDomain",
+  ]) {
+    document.getElementById(id)?.addEventListener("input", () => {
+      writeStorageChoice(choiceFromControls());
+    });
+  }
+
   // Persisted but not rebuilt on: the toggle selects which sign-in path the page
   // takes, which the client is not built from.
   document.getElementById("useIcrc25")?.addEventListener("change", () => {
