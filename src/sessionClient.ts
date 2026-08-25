@@ -240,8 +240,20 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
     );
   };
 
+  // Called from an interval, a subscription and click handlers, all of which
+  // discard the promise, so nothing outside can observe a rejection. Reading the
+  // identity restores from storage and can fail; the countdowns should keep
+  // running when it does, on the last identity that was readable.
   const refresh = async () => {
-    identity = await client.getIdentity();
+    try {
+      identity = await client.getIdentity();
+    } catch (error) {
+      log(
+        `could not read the identity: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     render();
   };
 
@@ -296,7 +308,7 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
 
   onClick("sessionOpenTabBtn", () => {
     log("opening a second tab of this origin");
-    window.open(window.location.href, "_blank");
+    window.open(window.location.href, "_blank", "noopener");
   });
 
   // `prompt` and `hint` are baked into the authorize URL at construction, so a
