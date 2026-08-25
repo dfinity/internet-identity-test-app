@@ -131,6 +131,10 @@ let iiProtocolTestWindow: Window | undefined;
 // The identity set by the authentication
 let delegationIdentity: DelegationIdentity | undefined = undefined;
 let sessionHandle: SessionClientHandle | undefined = undefined;
+// Whether the identity this page holds came from the legacy protocol path, which
+// creates no session. Anything else leaves the session as the record of being
+// signed in, so a leftover identity here means nothing once it is gone.
+let legacySignIn = false;
 
 // The most recently received ICRC-3 attribute bundle, kept around so the
 // "Send attributes to canister" button can wrap the delegation identity in
@@ -496,7 +500,7 @@ const init = async () => {
     onClient: (handle) => {
       sessionHandle = handle;
     },
-    appIdentity: () => delegationIdentity,
+    appIdentity: () => (legacySignIn ? delegationIdentity : undefined),
   });
   log("page loaded, session client built");
   if (redirect !== undefined && sessionHandle !== undefined) {
@@ -544,6 +548,7 @@ const init = async () => {
         showError("the session client is not ready");
         return;
       }
+      legacySignIn = !useIcrc25El.checked;
       const result = await authWithII({
         url: iiUrlEl.value,
         authClient: sessionHandle.client,
@@ -814,7 +819,7 @@ const currentIdentity = async (): Promise<Identity | undefined> => {
       return fromClient;
     }
   }
-  return delegationIdentity;
+  return legacySignIn ? delegationIdentity : undefined;
 };
 
 const showError = (err: string) => {
