@@ -147,13 +147,6 @@
 
       <section>
         <h2>Session</h2>
-        <p>
-          Needs an Internet Identity that answers
-          <code>ii_session_delegation</code> and exposes the
-          <code>app_*</code> session methods. The provider URL, canister id and
-          storage below are read when the page loads, so changing them takes a
-          reload.
-        </p>
         <h3>State:</h3>
         <div id="sessionState">-</div>
         <h3>Account principal (what an app's canisters see):</h3>
@@ -227,7 +220,6 @@
             />localStorage</label
           >
         </div>
-        <button id="sessionApplyStorageBtn">Apply storage and reload</button>
         <h3>Log:</h3>
         <pre id="sessionLog"></pre>
       </section>

@@ -98,7 +98,13 @@ export interface SessionClientHandle {
   client: AuthClient;
   sessionStorage: SessionStorage;
   params: SessionClientParams;
-  log: (message: string) => void;
+}
+
+/** The provider fields the homepage form owns. Storage is the panel's own. */
+export interface ProviderParams {
+  authorizeUrl?: string;
+  canisterId?: string;
+  derivationOrigin?: string;
 }
 
 const storagesFor = (
@@ -141,15 +147,7 @@ export const createSessionClient = (
     idleOptions: { disableIdle: true },
   });
 
-  const entries: string[] = [];
-  const log = (message: string) => {
-    const stamp = new Date().toISOString().slice(11, 23);
-    entries.unshift(`${stamp}  ${message}`);
-    const node = document.getElementById("sessionLog");
-    if (node !== null) node.textContent = entries.slice(0, 200).join("\n");
-  };
-
-  return { client, sessionStorage, params, log };
+  return { client, sessionStorage, params };
 };
 
 /**
@@ -161,8 +159,53 @@ export const createSessionClient = (
  * can see (the delegation changed, and when) alongside what this page itself did,
  * and never guesses which of the two caused the other.
  */
-export const mountSessionPanel = (handle: SessionClientHandle): void => {
-  const { client, sessionStorage, log } = handle;
+export const mountSessionPanel = (options: {
+  /** Read live, so an edit to the provider fields takes effect on the next build. */
+  readProvider: () => ProviderParams;
+  /** Hands the page the client it should sign in with, including after a rebuild. */
+  onClient: (handle: SessionClientHandle) => void;
+}): { log: (message: string) => void } => {
+  const entries: string[] = [];
+  const log = (message: string) => {
+    const stamp = new Date().toISOString().slice(11, 23);
+    entries.unshift(`${stamp}  ${message}`);
+    const node = document.getElementById("sessionLog");
+    if (node !== null) node.textContent = entries.slice(0, 200).join("\n");
+  };
+
+  const control = (id: string) =>
+    document.getElementById(id) as HTMLInputElement | null;
+
+  // The radios and the domain field are the source of truth once the panel is up;
+  // the stored copy exists for the redirect callback, which is a separate load.
+  const choiceFromControls = (): StorageChoice => ({
+    session:
+      control("sessionStorageCookie")?.checked === true ? "cookie" : "local",
+    identity:
+      control("identityStorageLocal")?.checked === true ? "local" : "idb",
+    cookieDomain: control("sessionCookieDomain")?.value.trim() ?? "",
+  });
+
+  const stored = readStorageChoice();
+  const setChecked = (id: string, value: boolean) => {
+    const node = control(id);
+    if (node !== null) node.checked = value;
+  };
+  setChecked("sessionStorageLocal", stored.session === "local");
+  setChecked("sessionStorageCookie", stored.session === "cookie");
+  setChecked("identityStorageIdb", stored.identity === "idb");
+  setChecked("identityStorageLocal", stored.identity === "local");
+  const domainEl = control("sessionCookieDomain");
+  if (domainEl !== null) domainEl.value = stored.cookieDomain;
+
+  const build = (): SessionClientHandle =>
+    createSessionClient({
+      ...options.readProvider(),
+      choice: choiceFromControls(),
+    });
+
+  let handle = build();
+  options.onClient(handle);
 
   const setText = (id: string, value: string) => {
     const node = document.getElementById(id);
@@ -174,7 +217,7 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
   let delegationChanges = 0;
 
   const render = () => {
-    const stored = sessionStorage.get();
+    const stored = handle.sessionStorage.get();
 
     setText("sessionState", stored === null ? "no session" : "signed in");
     setText(
@@ -227,8 +270,8 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
     }
 
     const hint =
-      sessionStorage instanceof CookieSessionStorage
-        ? sessionStorage.readHint()
+      handle.sessionStorage instanceof CookieSessionStorage
+        ? handle.sessionStorage.readHint()
         : null;
     setText(
       "sessionHint",
@@ -246,7 +289,7 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
   // running when it does, on the last identity that was readable.
   const refresh = async () => {
     try {
-      identity = await client.getIdentity();
+      identity = await handle.client.getIdentity();
     } catch (error) {
       log(
         `could not read the identity: ${
@@ -257,10 +300,47 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
     render();
   };
 
-  client.subscribe(() => {
-    log("client reported a change");
+  const listen = (h: SessionClientHandle) =>
+    h.client.subscribe(() => {
+      log("client reported a change");
+      void refresh();
+    });
+  let unsubscribe = listen(handle);
+
+  // Changing a setting replaces the client rather than asking for a reload.
+  // `dispose` releases the old one's listeners, channel and identity and leaves
+  // storage alone, so a session in progress survives being reconfigured.
+  const rebuild = (what: string) => {
+    unsubscribe();
+    handle.client.dispose();
+    handle = build();
+    options.onClient(handle);
+    unsubscribe = listen(handle);
+    identity = undefined;
+    lastDelegationExpiry = undefined;
+    log(`${what} changed, client rebuilt`);
     void refresh();
-  });
+  };
+
+  // Every control the client is built from. Text fields settle on change rather
+  // than on each keystroke, which is what makes rebuilding on edit reasonable.
+  for (const id of [
+    "iiUrl",
+    "iiCanisterId",
+    "derivationOrigin",
+    "sessionCookieDomain",
+    "sessionStorageLocal",
+    "sessionStorageCookie",
+    "identityStorageIdb",
+    "identityStorageLocal",
+  ]) {
+    document.getElementById(id)?.addEventListener("change", () => {
+      // The redirect callback is a separate load and cannot read these controls,
+      // so the storage choice is written down for it.
+      writeStorageChoice(choiceFromControls());
+      rebuild(id);
+    });
+  }
 
   // The delegation's expiry is the only externally visible sign that it was
   // replaced, so it is polled rather than waited on.
@@ -292,7 +372,7 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
 
   onClick("sessionSignOutBtn", async () => {
     log("signOut requested");
-    await client.signOut();
+    await handle.client.signOut();
     log("signOut returned, the session is ended at the canister");
   });
 
@@ -314,10 +394,10 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
   // `prompt` and `hint` are baked into the authorize URL at construction, so a
   // silent re-issue is its own client sharing this one's storage.
   onClick("sessionSilentBtn", async () => {
-    const stored = sessionStorage.get();
+    const stored = handle.sessionStorage.get();
     const hint =
-      sessionStorage instanceof CookieSessionStorage
-        ? (sessionStorage.readHint()?.principal ?? undefined)
+      handle.sessionStorage instanceof CookieSessionStorage
+        ? (handle.sessionStorage.readHint()?.principal ?? undefined)
         : stored === null
           ? undefined
           : accountPrincipal(stored);
@@ -340,7 +420,7 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
             : handle.params.canisterId,
       },
       derivationOrigin: handle.params.derivationOrigin,
-      sessionStorage,
+      sessionStorage: handle.sessionStorage,
       idleOptions: { disableIdle: true },
       prompt: "none",
       hint,
@@ -352,4 +432,6 @@ export const mountSessionPanel = (handle: SessionClientHandle): void => {
       silent.dispose();
     }
   });
+
+  return { log };
 };

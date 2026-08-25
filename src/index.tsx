@@ -22,13 +22,7 @@ import {
   Icrc3Attributes,
 } from "./auth";
 import { formatIcrc3Attributes } from "./icrc3";
-import {
-  createSessionClient,
-  mountSessionPanel,
-  readStorageChoice,
-  writeStorageChoice,
-  type SessionClientHandle,
-} from "./sessionClient";
+import { mountSessionPanel, type SessionClientHandle } from "./sessionClient";
 import {
   CALLBACK_PATH,
   decodeResults,
@@ -485,54 +479,27 @@ const renderRedirectIdentity = async (
   });
 };
 
-/**
- * The storage controls, which are read before the client exists and so take
- * effect on the next load rather than this one.
- */
-const mountStorageControls = () => {
-  const radio = (id: string) => document.getElementById(id) as HTMLInputElement;
-  const domainEl = document.getElementById(
-    "sessionCookieDomain",
-  ) as HTMLInputElement;
-  const choice = readStorageChoice();
-
-  radio("sessionStorageLocal").checked = choice.session === "local";
-  radio("sessionStorageCookie").checked = choice.session === "cookie";
-  radio("identityStorageIdb").checked = choice.identity === "idb";
-  radio("identityStorageLocal").checked = choice.identity === "local";
-  domainEl.value = choice.cookieDomain;
-
-  const applyBtn = document.getElementById(
-    "sessionApplyStorageBtn",
-  ) as HTMLButtonElement;
-  applyBtn.onclick = () => {
-    writeStorageChoice({
-      session: radio("sessionStorageCookie").checked ? "cookie" : "local",
-      identity: radio("identityStorageLocal").checked ? "local" : "idb",
-      cookieDomain: domainEl.value.trim(),
-    });
-    window.location.reload();
-  };
-};
-
 const init = async () => {
   // The form is restored first: the session client is built from it, and a
   // redirect return carries the values the outbound load was configured with.
   const redirect = restoreRedirectResultIfPresent();
 
-  const handle = createSessionClient({
-    authorizeUrl: iiUrlEl.value,
-    canisterId: iiCanisterIdEl.value.trim(),
-    derivationOrigin:
-      derivationOriginEl.value !== "" ? derivationOriginEl.value : undefined,
-    choice: readStorageChoice(),
+  // The panel owns the client, and rebuilds it when anything it is built from
+  // changes, so the page reads the current one from here rather than holding one.
+  const { log } = mountSessionPanel({
+    readProvider: () => ({
+      authorizeUrl: iiUrlEl.value,
+      canisterId: iiCanisterIdEl.value.trim(),
+      derivationOrigin:
+        derivationOriginEl.value !== "" ? derivationOriginEl.value : undefined,
+    }),
+    onClient: (handle) => {
+      sessionHandle = handle;
+    },
   });
-  sessionHandle = handle;
-  mountSessionPanel(handle);
-  mountStorageControls();
-  handle.log("page loaded, session client built");
-  if (redirect !== undefined) {
-    await renderRedirectIdentity(handle, redirect);
+  log("page loaded, session client built");
+  if (redirect !== undefined && sessionHandle !== undefined) {
+    await renderRedirectIdentity(sessionHandle, redirect);
   }
 
   const userAgentElement = document.getElementById("userAgent") as HTMLElement;
