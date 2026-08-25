@@ -565,6 +565,14 @@ const init = async () => {
           .filter((s) => s.length > 0),
       });
       delegationIdentity = result.identity;
+      // `signIn` mints, but the identity can be replaced straight after by a
+      // reconcile that holds nothing, and the only other trigger is the page
+      // coming back to the foreground. Ask for one now instead.
+      const settled = await sessionHandle.client.getIdentity();
+      const mintable = settled as { refresh?: () => Promise<void> };
+      if (typeof mintable.refresh === "function") {
+        await mintable.refresh().catch(() => undefined);
+      }
       updateDelegationView({
         identity: delegationIdentity,
         authnMethod: result.authnMethod,
@@ -726,8 +734,13 @@ sendAttributesBtn.addEventListener("click", async () => {
   }
 
   const canisterId = Principal.fromText(readCanisterId());
+  const inner = await currentIdentity();
+  if (inner === undefined) {
+    showError("Sign in first");
+    return;
+  }
   const identity = new AttributesIdentity({
-    inner: delegationIdentity,
+    inner,
     attributes: latestIcrc3Attributes,
     signer: { canisterId: Principal.fromText(iiCanisterIdText) },
   });
@@ -769,7 +782,7 @@ whoamiBtn.addEventListener("click", async () => {
   const canisterId = Principal.fromText(readCanisterId());
   const agent = await HttpAgent.create({
     host: hostUrlEl.value,
-    identity: delegationIdentity,
+    identity: await currentIdentity(),
     shouldFetchRootKey: true,
   });
   const actor = Actor.createActor(idlFactory, {
@@ -788,6 +801,21 @@ whoamiBtn.addEventListener("click", async () => {
       console.error("Failed to fetch whoami", err);
     });
 });
+
+/**
+ * The identity to make calls with. `delegationIdentity` is only set by a sign-in
+ * that happened in this tab, so a second tab of the origin would otherwise call
+ * anonymously despite holding the session.
+ */
+const currentIdentity = async (): Promise<Identity | undefined> => {
+  if (sessionHandle !== undefined) {
+    const fromClient = await sessionHandle.client.getIdentity();
+    if (!fromClient.getPrincipal().isAnonymous()) {
+      return fromClient;
+    }
+  }
+  return delegationIdentity;
+};
 
 const showError = (err: string) => {
   alert(err);
