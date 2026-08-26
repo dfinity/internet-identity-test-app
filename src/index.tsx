@@ -98,6 +98,9 @@ const autoSelectionPrincipalEl = document.getElementById(
 const allowPinAuthenticationEl = document.getElementById(
   "allowPinAuthentication",
 ) as HTMLInputElement;
+const requestNotificationsEl = document.getElementById(
+  "requestNotifications",
+) as HTMLInputElement;
 const useIcrc25El = document.getElementById("useIcrc25") as HTMLInputElement;
 const transportEl = document.getElementById("transport") as HTMLSelectElement;
 const useIcrc3AttributesEl = document.getElementById(
@@ -509,6 +512,7 @@ const init = async () => {
         maxTimeToLive,
         derivationOrigin,
         allowPinAuthentication,
+        requestNotifications: requestNotificationsEl.checked,
         sessionIdentity: getLocalIdentity(),
         autoSelectionPrincipal,
         useIcrc25: useIcrc25El.checked,
