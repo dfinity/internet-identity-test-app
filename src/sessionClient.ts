@@ -72,6 +72,7 @@ export interface SessionClientParams {
   canisterId?: string;
   derivationOrigin?: string;
   transport?: "window" | "redirect";
+  agentOptions?: { host?: string; shouldFetchRootKey?: boolean };
   choice: StorageChoice;
 }
 
@@ -169,6 +170,12 @@ export interface ProviderParams {
   authorizeUrl?: string;
   canisterId?: string;
   derivationOrigin?: string;
+  /**
+   * How the client should reach the network it mints against. Needed off
+   * mainnet: the agent it builds defaults to not fetching the root key, so
+   * certificates from a local replica fail verification with a `TrustError`.
+   */
+  agentOptions?: { host?: string; shouldFetchRootKey?: boolean };
 }
 
 const storagesFor = (
@@ -204,6 +211,7 @@ export const createSessionClient = (
     },
     derivationOrigin: params.derivationOrigin,
     transport: params.transport,
+    agentOptions: params.agentOptions,
     sessionStorage,
     identityStorage,
     // The panel is the point of the page; an idle timer reloading it would take
@@ -566,6 +574,7 @@ export const mountSessionPanel = (options: {
             : handle.params.canisterId,
       },
       derivationOrigin: handle.params.derivationOrigin,
+      agentOptions: handle.params.agentOptions,
       sessionStorage: handle.sessionStorage,
       idleOptions: { disableIdle: true },
       prompt: "none",

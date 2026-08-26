@@ -496,6 +496,12 @@ const init = async () => {
       canisterId: iiCanisterIdEl.value.trim(),
       derivationOrigin:
         derivationOriginEl.value !== "" ? derivationOriginEl.value : undefined,
+      // The host field is what the rest of this page calls, and off mainnet the
+      // root key has to be fetched or every certificate fails verification.
+      agentOptions: {
+        host: hostUrlEl.value !== "" ? hostUrlEl.value : undefined,
+        shouldFetchRootKey: true,
+      },
     }),
     onClient: (handle) => {
       sessionHandle = handle;
