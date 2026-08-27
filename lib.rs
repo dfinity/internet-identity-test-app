@@ -2,6 +2,7 @@ use crate::AlternativeOriginsMode::{CertifiedContent, Redirect};
 use asset_util::{collect_assets, Asset, CertifiedAssets, ContentEncoding, ContentType};
 use candid::{CandidType, Deserialize, Principal};
 use ic_cdk::api;
+use ic_cdk::call::Call;
 use ic_cdk_macros::{init, post_upgrade, query, update};
 use include_dir::{include_dir, Dir};
 use serde_bytes::ByteBuf;
@@ -20,6 +21,9 @@ const AUTH_CALLBACKS_PATH: &str = "/.well-known/ii-auth-callbacks";
 // knows about this origin on its own.
 const APP_METADATA_PATH: &str = "/.well-known/ii-app-metadata";
 const EVIL_APP_METADATA_PATH: &str = "/.well-known/evil-app-metadata";
+// Notification sender allowlist II fetches (at consent) to authorize a
+// canister as a sender for this origin. This canister lists itself.
+const NOTIFICATION_SENDERS_PATH: &str = "/.well-known/ii-notification-senders";
 const EMPTY_ALTERNATIVE_ORIGINS: &str = r#"{"alternativeOrigins":[]}"#;
 const OUTDATED_INVALID_CERTIFICATE_HEADER: &str = ":2dn3omR0cmVlgwGDAYMBgwJIY2FuaXN0ZXKDAYMBggRYIF7eYW50QXA1hAANBQ4J616Ekjch0ihDxnNGwvlxxIKDgwGCBFggH4wduBeihx+gd8Oe2KvzyQxp/PEe6ustjHJNlVhLbmaDAkqAAAAAABAAAwEBgwGDAYMCTmNlcnRpZmllZF9kYXRhggNYIIA3JGAjACCVyCTmsRmhhlZDI5oDZZkhGVMbpCIFTEejggRYIIMJ950nCB4emD2uvICtY5WfLhcOzb2BaqH4EvUGTX2xggRYIFfnBG3quMbImRDu81QLZKq0ADXD75bQIoPHA2y4JRQVggRYIETEKmiZ1Lflrx8sIiDUOqBdb7X+mJ5+kEturndxJYzeggRYINPKhi8ZGTDLJJGHdaSlL3lxf8JFGiBHe3FVp4y/myCvggRYIIZ883QyMwhObp/SFU8xtXu8w8xGgwEWfkJYAWqC9dNSgwGCBFgg49iYnFVeAADyzEwGNNe…Bcfct/T4ZWVYbJe/P3gUbLOS8n9uDAklodHRwX2V4cHKDAYMBgwGCBFgggaSHI9J56LbuKjb58O8AWYlQNqTWZBxB58L7Y6u9j2ODAksud2VsbC1rbm93boMBggRYIJY8druSGXKdr/LHH3Kr/F+Vo9VwgluKJZS6HxkTrIeUgwJWaWktYWx0ZXJuYXRpdmUtb3JpZ2luc4MCQzwkPoMCWCBiB64Pds+kxrd7O3KKhS3TAcooPTqycnGLKWuiy3dP6IMCQIMCWCCaryvDtyyZdDWHqiLmkc63lZuPrBF2Tt6ULsG0LUkWcIIDQIIEWCAYA1f5ooQFb7bDDkKE0QhYJLkfsn2j1GCIGJvp8r8ucYIEWCB28Uo/B0pARPP3FnDUBj83i4NpGPehI4IGGI2I2iOQhg==:, expr_path=:2dn3hGlodHRwX2V4cHJrLndlbGwta25vd252aWktYWx0ZXJuYXRpdmUtb3JpZ2luc2M8JD4=:, version=2";
 
@@ -55,6 +59,95 @@ fn caller_attributes() -> CallerAttributes {
     CallerAttributes {
         signer: api::msg_caller_info_signer(),
         data: ByteBuf::from(api::msg_caller_info_data()),
+    }
+}
+
+// ===== Notifications: send a test notification through II =====
+//
+// The frontend calls this after sign-in; this canister then calls II's
+// `notification_send` as the (canister) sender. II authorizes the caller by
+// fetching this origin's `/.well-known/ii-notification-senders`, so this only
+// works when the app runs at a public canister origin II can reach — not
+// localhost. `origin` is the origin the user consented from (the frontend
+// passes its own `window.location.origin`); `recipient` is the user's per-app
+// principal (its delegated identity's principal for this origin).
+
+#[derive(CandidType, Deserialize)]
+enum NotificationUrgency {
+    #[serde(rename = "low")]
+    Low,
+    #[serde(rename = "normal")]
+    Normal,
+    #[serde(rename = "high")]
+    High,
+}
+
+#[derive(CandidType, Deserialize)]
+struct Notification {
+    id: ByteBuf,
+    recipient: Principal,
+    urgency: Option<NotificationUrgency>,
+    expires_at: Option<u64>,
+}
+
+#[derive(CandidType, Deserialize)]
+struct NotificationSendRequest {
+    notifications: Option<Vec<Notification>>,
+    origin: Option<String>,
+}
+
+#[derive(CandidType, Deserialize, Debug)]
+enum NotificationRejection {
+    #[serde(rename = "no_consent")]
+    NoConsent,
+    #[serde(rename = "not_subscribed")]
+    NotSubscribed,
+    #[serde(rename = "invalid")]
+    Invalid,
+}
+
+#[derive(CandidType, Deserialize, Debug)]
+struct RejectedNotification {
+    id: ByteBuf,
+    reason: NotificationRejection,
+}
+
+#[derive(CandidType, Deserialize)]
+struct NotificationSendResponse {
+    accepted: Option<u32>,
+    rejected: Option<Vec<RejectedNotification>>,
+    retry_after_ms: Option<u32>,
+    resend_epoch: Option<u64>,
+}
+
+#[update]
+async fn send_notification(ii: Principal, recipient: Principal, origin: String) -> String {
+    let id = ByteBuf::from(api::time().to_be_bytes().to_vec());
+    let request = NotificationSendRequest {
+        notifications: Some(vec![Notification {
+            id,
+            recipient,
+            urgency: None,
+            expires_at: None,
+        }]),
+        origin: Some(origin),
+    };
+    let response = match Call::unbounded_wait(ii, "notification_send")
+        .with_arg(request)
+        .await
+    {
+        Ok(response) => response,
+        Err(err) => return format!("call failed: {err}"),
+    };
+    match response.candid::<NotificationSendResponse>() {
+        Ok(resp) => format!(
+            "accepted={} rejected={:?} retry_after_ms={:?} resend_epoch={:?}",
+            resp.accepted.unwrap_or(0),
+            resp.rejected.unwrap_or_default(),
+            resp.retry_after_ms,
+            resp.resend_epoch,
+        ),
+        Err(err) => format!("decode failed: {err}"),
     }
 }
 
@@ -305,6 +398,16 @@ fn init_assets(alternative_origins: String, extra_auth_callbacks: Vec<String>) {
     assets.push(Asset {
         url_path: AUTH_CALLBACKS_PATH.to_string(),
         content: content.into_bytes(),
+        encoding: ContentEncoding::Identity,
+        content_type: ContentType::JSON,
+    });
+
+    // Sender allowlist: authorize this canister to send notifications for its
+    // own origin. II fetches this at consent time.
+    let senders = serde_json::json!({ "senders": [canister_id.to_text()] }).to_string();
+    assets.push(Asset {
+        url_path: NOTIFICATION_SENDERS_PATH.to_string(),
+        content: senders.into_bytes(),
         encoding: ContentEncoding::Identity,
         content_type: ContentType::JSON,
     });

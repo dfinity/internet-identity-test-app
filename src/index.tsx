@@ -34,6 +34,15 @@ import "./main.css";
 
 const signInBtn = document.getElementById("signinBtn") as HTMLButtonElement;
 const whoamiBtn = document.getElementById("whoamiBtn") as HTMLButtonElement;
+const sendNotificationBtn = document.getElementById(
+  "sendNotificationBtn",
+) as HTMLButtonElement;
+const notificationCanisterIdEl = document.getElementById(
+  "notificationCanisterId",
+) as HTMLInputElement;
+const sendNotificationResponseEl = document.getElementById(
+  "sendNotificationResponse",
+) as HTMLDivElement;
 const updateAlternativeOriginsBtn = document.getElementById(
   "updateNewAlternativeOrigins",
 ) as HTMLButtonElement;
@@ -185,6 +194,11 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     update_app_metadata: IDL.Func([IDL.Text, AppMetadataMode], [], []),
     whoami: IDL.Func([], [IDL.Principal], ["query"]),
     caller_attributes: IDL.Func([], [CallerAttributes], []),
+    send_notification: IDL.Func(
+      [IDL.Principal, IDL.Principal, IDL.Text],
+      [IDL.Text],
+      [],
+    ),
   });
 };
 
@@ -723,6 +737,40 @@ sendAttributesBtn.addEventListener("click", async () => {
     canisterEchoedAttributesEl.innerText = `signer: ${signerText}\n${formatted}`;
   } catch (err) {
     canisterEchoedAttributesEl.innerText = `Failed: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+  }
+});
+
+sendNotificationBtn.addEventListener("click", async () => {
+  if (delegationIdentity === undefined) {
+    showError("Sign in first — the recipient is your per-app principal.");
+    return;
+  }
+  const iiText = notificationCanisterIdEl.value.trim();
+  if (iiText === "") {
+    showError("Set the II backend canister id first.");
+    return;
+  }
+  sendNotificationResponseEl.innerText = "Sending...";
+  try {
+    const canisterId = Principal.fromText(readCanisterId());
+    const agent = await HttpAgent.create({
+      host: hostUrlEl.value,
+      identity: delegationIdentity,
+      shouldFetchRootKey: true,
+    });
+    const actor = Actor.createActor(idlFactory, { agent, canisterId });
+    // recipient = this identity's per-app principal; origin = where we\'re served
+    // from (must match the origin consented to and the well-known senders doc).
+    const result = (await actor.send_notification(
+      Principal.fromText(iiText),
+      delegationIdentity.getPrincipal(),
+      window.location.origin,
+    )) as string;
+    sendNotificationResponseEl.innerText = result;
+  } catch (err) {
+    sendNotificationResponseEl.innerText = `Failed: ${
       err instanceof Error ? err.message : String(err)
     }`;
   }

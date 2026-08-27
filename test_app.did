@@ -55,4 +55,9 @@ service : (opt InitArg) -> {
   /// tests can verify the round-trip from II → frontend →
   /// `AttributeIdentity` → canister.
   caller_attributes: () -> (CallerAttributes);
+  /// Sends a test notification through II's `notification_send`, from this
+  /// canister as the sender. `ii` is II's backend canister id, `recipient`
+  /// the user's per-app principal, `origin` the origin the user consented
+  /// from. Returns a debug summary of II's response.
+  send_notification: (ii: principal, recipient: principal, origin: text) -> (text);
 }
