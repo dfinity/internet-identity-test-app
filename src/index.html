@@ -32,7 +32,7 @@
           "Segoe UI",
           sans-serif;
         display: grid;
-        grid-template-columns: 244px minmax(0, 1fr) 400px;
+        grid-template-columns: 244px minmax(0, 1fr);
         min-height: 100vh;
       }
 
@@ -339,16 +339,102 @@
         accent-color: var(--accent);
       }
 
-      /* ---------- right: the session, always rendered ---------- */
+      /* ---------- the session drawer ----------
+         Slid off-canvas by transform rather than hidden: every readout in here
+         is read with innerText, which is empty for a display:none element, so
+         the drawer stays rendered whether it is open or shut. */
+      .sessionbtn {
+        position: fixed;
+        top: 16px;
+        right: 20px;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 9px 14px;
+        background: var(--pane);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        font-size: 13.5px;
+        color: var(--dim);
+      }
+      .sessionbtn:hover {
+        color: var(--ink);
+        border-color: #3f3f46;
+        background: var(--pane);
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #52525b;
+      }
+      .sessionbtn[data-connected="true"] .dot {
+        background: var(--ok);
+      }
       .rail {
-        position: sticky;
+        position: fixed;
         top: 0;
-        align-self: start;
+        right: 0;
+        z-index: 40;
+        width: min(430px, 100vw);
         height: 100vh;
         overflow-y: auto;
-        padding: 26px 22px 40px;
+        padding: 22px 22px 40px;
         background: var(--pane);
         border-left: 1px solid var(--line);
+        box-shadow: -24px 0 48px rgba(0, 0, 0, 0.45);
+        transform: translateX(101%);
+        transition: transform 0.18s ease-out;
+        pointer-events: none;
+      }
+      .rail[data-open="true"] {
+        transform: none;
+        pointer-events: auto;
+      }
+      .scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 35;
+        background: rgba(0, 0, 0, 0.45);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.18s;
+      }
+      .scrim[data-open="true"] {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .railclose {
+        background: none;
+        border: 0;
+        padding: 4px 6px;
+        color: var(--faint);
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .railclose:hover {
+        color: var(--ink);
+        background: none;
+      }
+      /* Placeholder copy lives in a sibling, never in generated content, so the
+         element e2e reads stays genuinely empty until there is a session. */
+      .empty {
+        display: none;
+        font: 12.5px/1.6 var(--mono);
+        color: #55555c;
+        margin: 0 0 14px;
+        padding: 13px;
+        background: #0e0e11;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      pre:empty {
+        display: none;
+      }
+      pre:empty + .empty {
+        display: block;
       }
       .railhead {
         display: flex;
@@ -496,18 +582,6 @@
         border-left: 3px solid var(--ok);
       }
 
-      @media (max-width: 1200px) {
-        body {
-          grid-template-columns: 220px minmax(0, 1fr);
-        }
-        .rail {
-          grid-column: 1 / -1;
-          position: static;
-          height: auto;
-          border-left: 0;
-          border-top: 1px solid var(--line);
-        }
-      }
       @media (max-width: 800px) {
         body {
           grid-template-columns: minmax(0, 1fr);
@@ -905,8 +979,23 @@
       </section>
     </main>
 
-    <div class="rail" id="sessionRail">
-      <div class="railhead"><span>Session</span></div>
+    <button
+      class="sessionbtn"
+      id="sessionBtn"
+      data-connected="false"
+      aria-expanded="false"
+    >
+      <span class="dot"></span><span id="sessionBtnText">Not connected</span>
+    </button>
+    <div class="scrim" id="sessionScrim"></div>
+
+    <div class="rail" id="sessionRail" data-open="false">
+      <div class="railhead">
+        <span>Session</span>
+        <button class="railclose" id="sessionClose" aria-label="Close">
+          ×
+        </button>
+      </div>
 
       <div class="readout">
         <label for="principal">Principal</label>
@@ -944,22 +1033,30 @@
 
       <div class="tabgroup" data-tab="delegation">
         <pre id="delegation"></pre>
+        <div class="empty">
+          // No session yet — sign in to inspect the response.
+        </div>
       </div>
 
       <div class="tabgroup" data-tab="attributes">
         <h3>Certified</h3>
         <pre id="certifiedAttributes"></pre>
+        <div class="empty">// Nothing certified yet.</div>
         <h3>ICRC-3 (decoded)</h3>
         <pre id="icrc3AttributesDecoded"></pre>
+        <div class="empty">// No ICRC-3 attributes.</div>
         <h3>Canister echo</h3>
         <pre id="canisterEchoedAttributes"></pre>
+        <div class="empty">// Nothing echoed back yet.</div>
       </div>
 
       <div class="tabgroup" data-tab="raw">
         <h3>ICRC-3 (raw)</h3>
         <pre id="icrc3Attributes"></pre>
+        <div class="empty">// No ICRC-3 attributes.</div>
         <h3>Canister echo (raw)</h3>
         <pre id="canisterEchoedAttributesRaw"></pre>
+        <div class="empty">// Nothing echoed back yet.</div>
       </div>
     </div>
   </body>

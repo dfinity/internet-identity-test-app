@@ -1238,9 +1238,55 @@ const markCurrentNav = () => {
 window.addEventListener("hashchange", markCurrentNav);
 markCurrentNav();
 
-// The session readouts are all read with innerText, which is empty for a
-// display:none element, so filtering starts only once a human picks a segment.
+// The session lives in a drawer rather than a column, so a long delegation
+// never stretches the page. It is moved off-canvas by transform, not hidden:
+// every readout in it is read with innerText, which is empty for a
+// display:none element, so it must stay rendered whether open or shut.
 const sessionRail = document.getElementById("sessionRail");
+const sessionScrim = document.getElementById("sessionScrim");
+const sessionBtn = document.getElementById("sessionBtn");
+const sessionClose = document.getElementById("sessionClose");
+
+const setDrawer = (open: boolean) => {
+  sessionRail?.setAttribute("data-open", String(open));
+  sessionScrim?.setAttribute("data-open", String(open));
+  sessionBtn?.setAttribute("aria-expanded", String(open));
+  // Tab filtering starts with the first human opening, never on load, so the
+  // untouched page keeps every readout rendered for automation.
+  if (open && sessionRail?.getAttribute("data-tabs") === null) {
+    sessionRail.setAttribute("data-tabs", "delegation");
+  }
+};
+sessionBtn?.addEventListener("click", () =>
+  setDrawer(sessionRail?.getAttribute("data-open") !== "true"),
+);
+sessionClose?.addEventListener("click", () => setDrawer(false));
+sessionScrim?.addEventListener("click", () => setDrawer(false));
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") setDrawer(false);
+});
+
+// The button doubles as the connection indicator.
+const sessionBtnText = document.getElementById("sessionBtnText");
+const reflectConnection = () => {
+  const principal = principalEl?.innerText.trim() ?? "";
+  const connected = principal !== "";
+  sessionBtn?.setAttribute("data-connected", String(connected));
+  if (sessionBtnText !== null) {
+    sessionBtnText.innerText = connected
+      ? `${principal.slice(0, 5)}…${principal.slice(-3)}`
+      : "Not connected";
+  }
+};
+if (principalEl !== null) {
+  new MutationObserver(reflectConnection).observe(principalEl, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+}
+reflectConnection();
+
 document
   .querySelectorAll<HTMLButtonElement>(".segmented button")
   .forEach((tab) => {
@@ -1253,19 +1299,3 @@ document
       sessionRail?.setAttribute("data-tabs", tab.dataset.seg ?? "delegation");
     });
   });
-
-document.querySelectorAll<HTMLButtonElement>(".copy").forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    const id = btn.dataset.copy;
-    const text = id ? (document.getElementById(id)?.innerText ?? "") : "";
-    if (text === "") return;
-    try {
-      await navigator.clipboard.writeText(text);
-      const was = btn.innerText;
-      btn.innerText = "copied";
-      setTimeout(() => (btn.innerText = was), 1200);
-    } catch {
-      // A denied clipboard permission is not worth interrupting the page for.
-    }
-  });
-});
