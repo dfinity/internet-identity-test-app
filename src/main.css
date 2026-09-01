@@ -1,53 +1,16 @@
-/* Minimal CSS to make the issuer app usable */
+/* What the issuer/VC flow still needs. The page's own layout and controls are
+ * styled in index.html; the element-wide rules that used to live here (a 30rem
+ * cap on `main`, `min-width: 100%` on every input and button, a centered `h1`)
+ * fought that layout and are gone. */
 
 :root {
-  /* vertical spacing between elements */
   --stack: 0.8rem;
-
-  /* default text color */
-  --text-color: black;
-  /* less important text color */
-  --text-color-faded: grey;
-}
-
-/* some sensible body defaults */
-body {
-  margin: 0;
-  font-size: 1.6rem;
-  font-family: Helvetica, Arial, Sans-Serif;
-}
-
-/* Make titles centered */
-h1 {
-  text-align: center;
-}
-
-/* Space out section */
-section {
-  margin-top: 2em;
-}
-
-/* Center the app and prevent growing too wide */
-main {
-  margin: auto;
-  max-width: 30rem;
-  margin-bottom: 5em;
-}
-
-label {
-  /* set a less intense color for labels and revert for elements within */
-  color: var(--text-color-faded);
-  font-size: 1rem;
-  margin-top: var(--stack);
-}
-label * {
-  color: var(--text-color);
+  --text-color: #e8e8ec;
+  --text-color-faded: #6b6b72;
 }
 
 output {
   display: block;
-  min-width: 100%;
-  font-size: 1.2rem;
 }
 
 /* Something like "disabled" but for outputs */
@@ -55,35 +18,8 @@ output[data-unset] {
   color: var(--text-color-faded);
 }
 
-input {
-  /* Prevent padding from growing the element */
-  box-sizing: border-box;
-
-  min-width: 100%;
-  font-size: 1.2rem;
-  border: 0;
-  border-bottom: 1px solid black;
-}
-
-button {
-  display: block;
-  min-width: 100%;
-  height: 3em;
-  margin-top: var(--stack);
-}
-
-pre {
-  font-size: 0.8rem;
-  overflow-x: scroll;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
-
-/* Some specific styles */
-
 /* Give canister logs a CRT look */
 [data-role="canister-logs"] {
-  /* Prevent padding from growing the element */
   box-sizing: border-box;
   padding: 1.5em;
   font-family: monospace;

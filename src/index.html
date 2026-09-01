@@ -226,6 +226,7 @@
         flex: 0 0 auto;
         position: relative;
         width: 44px;
+        min-width: 44px;
         height: 26px;
         margin: 0;
         border: 0;
@@ -333,6 +334,7 @@
       }
       input[type="radio"] {
         width: 16px;
+        min-width: 16px;
         height: 16px;
         accent-color: var(--accent);
       }
@@ -456,6 +458,22 @@
       .rail[data-tabs="attributes"] .tabgroup:not([data-tab="attributes"]),
       .rail[data-tabs="raw"] .tabgroup:not([data-tab="raw"]) {
         display: none;
+      }
+
+      /* The credentials flow builds its own markup, so style it by descent. */
+      #root-vc-flow label {
+        display: block;
+        color: var(--dim);
+        font-size: 14px;
+        margin: 18px 0 7px;
+      }
+      #root-vc-flow button {
+        margin-top: 12px;
+      }
+      #root-vc-flow output {
+        font: 12.5px/1.55 var(--mono);
+        color: var(--dim);
+        overflow-wrap: anywhere;
       }
 
       .postMessage {
