@@ -7,27 +7,17 @@
   <body>
     <style>
       :root {
-        --bg: #f4f5f8;
-        --card: #ffffff;
-        --ink: #16181d;
-        --muted: #5d6470;
-        --line: #dfe3ea;
-        --accent: #3d5afe;
-        --ok: #1b7f4d;
-        --warn: #a25b00;
+        --bg: #0b0b0d;
+        --pane: #101013;
+        --sunk: #141417;
+        --line: #26262a;
+        --hair: #1d1d21;
+        --ink: #e8e8ec;
+        --dim: #a1a1a8;
+        --faint: #6b6b72;
+        --accent: #8c9eff;
+        --ok: #4ade80;
         --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #101216;
-          --card: #181b21;
-          --ink: #e6e8ee;
-          --muted: #9aa2b1;
-          --line: #2a2f38;
-          --accent: #8c9eff;
-          --ok: #57c98d;
-          --warn: #e0a458;
-        }
       }
       * {
         box-sizing: border-box;
@@ -37,332 +27,449 @@
         background: var(--bg);
         color: var(--ink);
         font:
-          14px/1.5 system-ui,
+          15px/1.5 system-ui,
           -apple-system,
+          "Segoe UI",
           sans-serif;
-      }
-      /* App shell: a fixed side pane, and one panel at a time in the content
-         area. Routing is the URL fragment and pure CSS — with no fragment every
-         panel renders, which is what automation sees, since Playwright never
-         navigates this page to one. */
-      body {
         display: grid;
-        grid-template-columns: 208px minmax(0, 1fr);
+        grid-template-columns: 244px minmax(0, 1fr) 400px;
         min-height: 100vh;
       }
-      aside {
+
+      /* ---------- left: grouped navigation ---------- */
+      nav {
         position: sticky;
         top: 0;
         align-self: start;
         height: 100vh;
         overflow-y: auto;
-        padding: 14px 12px;
-        background: var(--card);
+        padding: 26px 16px;
+        background: var(--pane);
         border-right: 1px solid var(--line);
       }
-      aside h1 {
-        font-size: 13px;
-        margin: 0 0 12px;
-        padding: 0 8px;
-        letter-spacing: 0.02em;
+      .navgroup {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 22px 0 8px 10px;
       }
-      aside a {
-        display: block;
-        padding: 6px 9px;
+      .navgroup:first-child {
+        margin-top: 0;
+      }
+      nav a {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 11px;
         margin-bottom: 2px;
-        border-radius: 6px;
-        color: var(--muted);
+        border-radius: 8px;
+        color: var(--dim);
         text-decoration: none;
-        font-size: 13px;
+        font-size: 14.5px;
       }
-      aside a:hover {
-        color: var(--accent);
-        background: var(--bg);
+      nav a:hover {
+        background: var(--sunk);
+        color: var(--ink);
       }
-      aside hr {
-        border: 0;
-        border-top: 1px solid var(--line);
-        margin: 10px 8px;
+      nav a.current {
+        background: #1c1c20;
+        color: #fff;
+        font-weight: 500;
       }
-      /* A targeted panel takes the content area alone, full width. */
-      main:has(section:target) {
+      .badge {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--dim);
+        background: var(--sunk);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 1px 7px;
+      }
+      .badge:empty {
+        display: none;
+      }
+
+      /* ---------- middle: one task at a time ---------- */
+      main {
+        display: grid;
         grid-template-columns: minmax(0, 1fr);
+        gap: 30px;
+        align-content: start;
+        padding: 30px 34px 60px;
+        min-width: 0;
       }
+      /* With a fragment only that panel renders. With none — which is what
+         automation always loads — every panel does, so nothing it fills or
+         clicks is ever hidden. */
       main:has(section:target) > section:not(:target) {
         display: none;
       }
-      @media (max-width: 899px) {
-        body {
-          grid-template-columns: minmax(0, 1fr);
-        }
-        aside {
-          position: static;
-          height: auto;
-          border-right: 0;
-          border-bottom: 1px solid var(--line);
-          display: flex;
-          flex-wrap: wrap;
-          gap: 4px;
-          align-items: center;
-        }
-        aside h1 {
-          width: 100%;
-          margin-bottom: 6px;
-        }
-        aside hr {
-          display: none;
-        }
-      }
-      .status {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px 22px;
-        font-size: 12px;
-      }
-      .status > span {
-        display: flex;
-        gap: 6px;
-        align-items: baseline;
-        min-width: 0;
-      }
-      .status b {
-        color: var(--muted);
-        font-weight: 600;
-        text-transform: uppercase;
-        font-size: 10px;
-        letter-spacing: 0.06em;
-      }
-      .status .val {
-        font-family: var(--mono);
-        overflow-wrap: anywhere;
-      }
-      main {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
-        gap: 14px;
-        align-items: start;
-        padding: 16px 20px 40px;
-      }
       section {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 14px 16px;
         min-width: 0;
-      }
-      section.wide {
-        grid-column: 1 / -1;
-      }
-      h1,
-      h2,
-      h3 {
-        line-height: 1.25;
+        scroll-margin-top: 24px;
       }
       section > h1 {
-        font-size: 14px;
-        margin: 0 0 10px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid var(--line);
-        letter-spacing: 0.02em;
+        font-size: 27px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 6px;
       }
-      h2,
-      h3 {
-        font-size: 12px;
-        color: var(--muted);
-        margin: 14px 0 6px;
+      p.lede {
+        color: var(--dim);
+        margin: 0 0 26px;
+        max-width: 62ch;
+      }
+      h2 {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
+        color: var(--faint);
+        margin: 26px 0 12px;
       }
       section > h2:first-of-type {
         margin-top: 0;
       }
-      p.hint {
-        color: var(--muted);
-        margin: 0 0 8px;
-        font-size: 12.5px;
-        max-width: 60ch;
+      .h2row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
       }
-      /* One grid per field: labels self-align, so no per-label widths. */
-      .row {
+      .h2row .aside {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--faint);
+      }
+
+      .fields {
         display: grid;
-        grid-template-columns: minmax(120px, 34%) minmax(0, 1fr);
-        gap: 6px 10px;
-        align-items: center;
-        margin: 0 0 6px;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+        gap: 16px 20px;
       }
-      .row > label {
-        color: var(--muted);
+      .field {
+        min-width: 0;
       }
-      .row.stack {
-        grid-template-columns: 1fr;
+      .field > label {
+        display: block;
+        color: var(--dim);
+        font-size: 14px;
+        margin-bottom: 7px;
       }
       input[type="text"],
       input[type="number"],
       select,
       textarea {
         width: 100%;
-        font: inherit;
-        padding: 5px 7px;
+        font: 14px var(--mono);
         color: var(--ink);
-        background: var(--bg);
+        background: var(--sunk);
         border: 1px solid var(--line);
-        border-radius: 5px;
+        border-radius: 8px;
+        padding: 11px 13px;
+      }
+      select {
+        font-family: inherit;
+        font-size: 15px;
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: #55555c;
+      }
+      input:focus,
+      select:focus,
+      textarea:focus {
+        outline: none;
+        border-color: var(--accent);
       }
       textarea {
-        min-height: 58px;
-        font-family: var(--mono);
+        min-height: 92px;
         resize: vertical;
+        line-height: 1.5;
       }
-      input[type="checkbox"],
-      input[type="radio"] {
-        justify-self: start;
-        width: 16px;
-        height: 16px;
-        accent-color: var(--accent);
-      }
-      button {
-        font: inherit;
-        font-weight: 500;
-        padding: 6px 12px;
-        color: var(--ink);
-        background: var(--bg);
+
+      .options {
         border: 1px solid var(--line);
-        border-radius: 5px;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .opt {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 15px 17px;
+        border-top: 1px solid var(--hair);
+      }
+      .opt:first-child {
+        border-top: 0;
+      }
+      .opt .txt {
+        min-width: 0;
+      }
+      .opt label {
+        display: block;
+        font-size: 15px;
+        color: var(--ink);
+      }
+      .opt .sub {
+        color: var(--faint);
+        font-size: 13px;
+        margin-top: 2px;
+      }
+      /* A real checkbox drawn as a switch, so its role and label stay intact. */
+      input[type="checkbox"].switch {
+        appearance: none;
+        flex: 0 0 auto;
+        position: relative;
+        width: 44px;
+        height: 26px;
+        margin: 0;
+        border: 0;
+        border-radius: 20px;
+        background: #3f3f46;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      input[type="checkbox"].switch::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #a1a1aa;
+        transition:
+          transform 0.15s,
+          background 0.15s;
+      }
+      input[type="checkbox"].switch:checked {
+        background: #f4f4f5;
+      }
+      input[type="checkbox"].switch:checked::after {
+        transform: translateX(18px);
+        background: #18181b;
+      }
+      input[type="checkbox"].switch:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      button {
+        font:
+          500 14.5px/1 system-ui,
+          sans-serif;
+        color: var(--ink);
+        background: var(--sunk);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 11px 16px;
         cursor: pointer;
       }
       button:hover {
-        border-color: var(--accent);
-        color: var(--accent);
+        border-color: #3f3f46;
+        background: #191920;
+      }
+      button.go {
+        background: #f4f4f5;
+        border-color: #f4f4f5;
+        color: #101013;
+      }
+      button.go:hover {
+        background: #fff;
       }
       .actions {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
-        margin: 10px 0 0;
+        gap: 10px;
+        margin-top: 18px;
       }
-      .actions.primary button:first-child {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      /* Every result box: mono, scrollable, never widens the card. */
+
       .out,
-      #delegation,
-      #certifiedAttributes,
-      #icrc3AttributesDecoded,
-      #icrc3Attributes,
-      #canisterEchoedAttributes,
-      #canisterEchoedAttributesRaw,
       #whoamiResponse,
       #sendNotificationResponse,
       #sendBatchResponse,
       #pendingResponse,
       #alternativeOrigins,
       #appMetadata,
-      /* `:not(:empty)` matters: e2e asserts #principal is hidden until sign-in,
-         so an empty readout must keep a zero-size box. */
-      #principal:not(:empty),
-      #expiration:not(:empty),
-      [data-role="authn-method"]:not(:empty) {
-        font-family: var(--mono);
-        font-size: 12px;
+      #messages {
+        font: 12.5px/1.55 var(--mono);
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         overflow-x: auto;
-        margin: 0;
-        padding: 7px 9px;
-        min-height: 30px;
-        background: var(--bg);
+        margin: 12px 0 0;
+        padding: 11px 13px;
+        color: var(--dim);
+        background: var(--sunk);
         border: 1px solid var(--line);
-        border-radius: 5px;
+        border-radius: 8px;
       }
-      /* Short fields pair up instead of each taking a whole row. */
-      .fields {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
-        gap: 8px 12px;
-      }
-      .fields > div {
-        min-width: 0;
-      }
-      .fields label {
-        display: block;
-        color: var(--muted);
-        font-size: 11.5px;
-        margin-bottom: 2px;
-      }
-      /* Booleans in one wrapped cluster rather than four stacked rows. */
-      .checks {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 18px;
-        margin: 10px 0 2px;
-      }
-      .checks > span {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .checks label {
-        color: var(--muted);
-        font-size: 12.5px;
-      }
-      nav {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px 6px;
-        margin-top: 8px;
-      }
-      nav a {
-        color: var(--muted);
-        text-decoration: none;
-        font-size: 11.5px;
-        padding: 2px 8px;
-        border: 1px solid var(--line);
-        border-radius: 20px;
-      }
-      nav a:hover {
-        color: var(--accent);
-        border-color: var(--accent);
+      #messages:empty,
+      #whoamiResponse:empty,
+      #sendNotificationResponse:empty,
+      #sendBatchResponse:empty,
+      #pendingResponse:empty {
+        display: none;
       }
       .radios {
         display: flex;
         flex-wrap: wrap;
-        gap: 4px 16px;
+        gap: 8px 20px;
         align-items: center;
-        margin: 0 0 8px;
+        margin-bottom: 14px;
       }
       .radios > span {
         display: flex;
-        gap: 6px;
         align-items: center;
+        gap: 7px;
       }
       .radios label {
-        color: var(--muted);
+        color: var(--dim);
+        font-size: 14px;
       }
-      fieldset {
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 10px 12px;
-        margin: 0 0 12px;
+      input[type="radio"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--accent);
       }
-      legend {
-        color: var(--muted);
+
+      /* ---------- right: the session, always rendered ---------- */
+      .rail {
+        position: sticky;
+        top: 0;
+        align-self: start;
+        height: 100vh;
+        overflow-y: auto;
+        padding: 26px 22px 40px;
+        background: var(--pane);
+        border-left: 1px solid var(--line);
+      }
+      .railhead {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+      .railhead span {
         font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
-        padding: 0 4px;
+        color: var(--faint);
       }
+      .readout {
+        margin-bottom: 16px;
+      }
+      .readout > label {
+        display: block;
+        color: var(--dim);
+        font-size: 13.5px;
+        margin-bottom: 6px;
+      }
+      /* The value sits in a styled shell so the value element itself can stay
+         empty and zero-size — e2e asserts #principal is hidden until sign-in. */
+      .shell {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        padding: 10px 12px;
+        background: var(--sunk);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .shell > .v {
+        flex: 1 1 auto;
+        min-width: 0;
+        font: 12.5px/1.5 var(--mono);
+        overflow-wrap: anywhere;
+      }
+      .shell > .ph {
+        color: #55555c;
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      .shell > .v:not(:empty) ~ .ph {
+        display: none;
+      }
+      .copy {
+        flex: 0 0 auto;
+        background: none;
+        border: 0;
+        padding: 2px 4px;
+        color: var(--faint);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .copy:hover {
+        color: var(--accent);
+        background: none;
+      }
+      .segmented {
+        display: inline-flex;
+        gap: 2px;
+        padding: 3px;
+        margin: 6px 0 12px;
+        background: #17171a;
+        border-radius: 9px;
+      }
+      .segmented button {
+        background: none;
+        border: 0;
+        border-radius: 6px;
+        padding: 7px 13px;
+        color: var(--dim);
+        font-size: 13.5px;
+      }
+      .segmented button[aria-selected="true"] {
+        background: #26262b;
+        color: #fff;
+      }
+      .rail pre {
+        font: 12.5px/1.6 var(--mono);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin: 0 0 14px;
+        padding: 13px;
+        color: var(--dim);
+        background: #0e0e11;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        min-height: 44px;
+      }
+      .rail h3 {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 16px 0 7px;
+      }
+      /* Tab filtering only switches on once a human picks a segment, so the
+         plain page automation loads keeps every readout rendered — several are
+         read with innerText, which is empty for a display:none element. */
+      .rail[data-tabs="delegation"] .tabgroup:not([data-tab="delegation"]),
+      .rail[data-tabs="attributes"] .tabgroup:not([data-tab="attributes"]),
+      .rail[data-tabs="raw"] .tabgroup:not([data-tab="raw"]) {
+        display: none;
+      }
+
       .postMessage {
         border: 1px solid var(--line);
-        border-radius: 5px;
-        padding: 8px 10px;
-        margin: 8px 0;
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin: 10px 0;
         overflow-wrap: anywhere;
-        font-family: var(--mono);
-        font-size: 12px;
+        font: 12.5px/1.55 var(--mono);
+        color: var(--dim);
       }
       .postMessage-title {
         font-weight: 600;
+        color: var(--ink);
       }
       .received {
         border-left: 3px solid var(--accent);
@@ -370,27 +477,61 @@
       .sent {
         border-left: 3px solid var(--ok);
       }
+
+      @media (max-width: 1200px) {
+        body {
+          grid-template-columns: 220px minmax(0, 1fr);
+        }
+        .rail {
+          grid-column: 1 / -1;
+          position: static;
+          height: auto;
+          border-left: 0;
+          border-top: 1px solid var(--line);
+        }
+      }
+      @media (max-width: 800px) {
+        body {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        nav {
+          position: static;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+      }
     </style>
 
-    <aside>
-      <h1>II test app</h1>
+    <nav>
+      <div class="navgroup">Authenticate</div>
       <a href="#card-signin">Sign in</a>
       <a href="#card-session">Session</a>
-      <a href="#card-send">Notifications: send</a>
-      <a href="#card-pending">Notifications: pending</a>
+      <a href="#root-vc-flow">Credentials</a>
+      <div class="navgroup">Notifications</div>
+      <a href="#card-send">Send</a>
+      <a href="#card-pending"
+        >Pending<span class="badge" id="pendingCount"></span
+      ></a>
+      <div class="navgroup">Diagnostics</div>
       <a href="#card-wellknown">Well-knowns</a>
       <a href="#card-protocol">Protocol tests</a>
-      <a href="#root-vc-flow">Credentials</a>
       <a href="#card-agent">User agent</a>
-      <hr />
-      <a href="#">Show everything</a>
-    </aside>
+      <div class="navgroup">View</div>
+      <a href="#">Everything at once</a>
+    </nav>
 
     <main>
       <section id="card-signin">
         <h1>Sign in</h1>
+        <p class="lede">
+          Configure the authorize request, fire it, and inspect what the
+          identity provider returns.
+        </p>
+
+        <h2>Request</h2>
         <div class="fields">
-          <div>
+          <div class="field">
             <label for="iiUrl">Identity Provider</label>
             <input
               type="text"
@@ -399,137 +540,148 @@
               value="http://localhost:5173"
             />
           </div>
-          <div>
+          <div class="field">
             <label for="transport">Transport</label>
             <select id="transport">
               <option value="window">Window (popup / postMessage)</option>
               <option value="redirect">Redirect (ICRC-167 URL)</option>
             </select>
           </div>
-          <div>
+          <div class="field">
             <label for="maxTimeToLive">Max time to live (ms)</label>
-            <input
-              type="number"
-              id="maxTimeToLive"
-              placeholder="(use default)"
-            />
+            <input type="number" id="maxTimeToLive" placeholder="use default" />
           </div>
-          <div>
+          <div class="field">
             <label for="derivationOrigin">Derivation origin</label>
             <input
               type="text"
               id="derivationOrigin"
-              placeholder="(use default)"
+              placeholder="use default"
             />
           </div>
-          <div>
+          <div class="field">
             <label for="autoSelectionPrincipal">Auto-select principal</label>
+            <input type="text" id="autoSelectionPrincipal" placeholder="none" />
+          </div>
+          <div class="field">
+            <label for="icrc3Nonce">ICRC-3 nonce (base64)</label>
+            <input type="text" id="icrc3Nonce" placeholder="none" />
+          </div>
+        </div>
+
+        <h2>Options</h2>
+        <div class="options">
+          <div class="opt">
+            <div class="txt">
+              <label for="allowPinAuthentication"
+                >PIN Authentication allowed:</label
+              >
+              <div class="sub">Permit browser-storage identities</div>
+            </div>
             <input
-              type="text"
-              id="autoSelectionPrincipal"
-              placeholder="(none)"
+              type="checkbox"
+              class="switch"
+              checked
+              id="allowPinAuthentication"
             />
           </div>
-          <div>
-            <label for="icrc3Nonce">ICRC-3 nonce (base64)</label>
-            <input type="text" id="icrc3Nonce" />
+          <div class="opt">
+            <div class="txt">
+              <label for="requestNotifications">Request notifications:</label>
+              <div class="sub">Ask for the notification scope</div>
+            </div>
+            <input type="checkbox" class="switch" id="requestNotifications" />
+          </div>
+          <div class="opt">
+            <div class="txt">
+              <label for="useIcrc25">Use ICRC-25 protocol:</label>
+              <div class="sub">Signer-standard request shape</div>
+            </div>
+            <input type="checkbox" class="switch" id="useIcrc25" />
+          </div>
+          <div class="opt">
+            <div class="txt">
+              <label for="useIcrc3Attributes">Use ICRC-3 attributes:</label>
+              <div class="sub">Attach certified attribute set</div>
+            </div>
+            <input type="checkbox" class="switch" id="useIcrc3Attributes" />
           </div>
         </div>
-        <div class="checks">
-          <span>
-            <input type="checkbox" checked id="allowPinAuthentication" />
-            <label for="allowPinAuthentication"
-              >PIN Authentication allowed:</label
-            >
-          </span>
-          <span>
-            <input type="checkbox" id="requestNotifications" />
-            <label for="requestNotifications">Request notifications:</label>
-          </span>
-          <span>
-            <input type="checkbox" id="useIcrc25" />
-            <label for="useIcrc25">Use ICRC-25 protocol:</label>
-          </span>
-          <span>
-            <input type="checkbox" id="useIcrc3Attributes" />
-            <label for="useIcrc3Attributes">Use ICRC-3 attributes:</label>
-          </span>
+
+        <div class="h2row">
+          <h2>Request attributes</h2>
+          <span class="aside">JSON</span>
         </div>
-        <div class="row stack">
-          <label for="requestAttributes">Request attributes</label>
-          <textarea id="requestAttributes"></textarea>
-        </div>
-        <div class="actions primary">
-          <button data-action="authenticate" id="signinBtn">Sign In</button>
+        <textarea id="requestAttributes"></textarea>
+
+        <div class="actions">
+          <button class="go" data-action="authenticate" id="signinBtn">
+            Sign In
+          </button>
         </div>
       </section>
 
       <section id="card-session">
         <h1>Session</h1>
-        <h2>Principal</h2>
-        <div data-role="principal" id="principal"></div>
-        <h2>Authentication method</h2>
-        <div data-role="authn-method"></div>
-        <h2>Expiry (ns from now)</h2>
-        <div id="expiration"></div>
-        <h2>Delegation</h2>
-        <pre id="delegation"></pre>
-        <h2>Certified attributes</h2>
-        <pre id="certifiedAttributes"></pre>
-        <h2>ICRC-3 attributes (decoded)</h2>
-        <pre id="icrc3AttributesDecoded"></pre>
-        <h2>ICRC-3 attributes (raw)</h2>
-        <pre id="icrc3Attributes"></pre>
-        <h2>Canister-echoed attributes</h2>
-        <div class="row">
-          <label for="iiCanisterId">II canister id (signer)</label>
-          <input
-            type="text"
-            id="iiCanisterId"
-            placeholder="e.g. rdmx6-jaaaa-aaaaa-aaadq-cai"
-          />
+        <p class="lede">
+          What the provider returned lives in the pane on the right. Echo the
+          signed attributes back through a canister to check the round trip.
+        </p>
+        <h2>Canister echo</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="iiCanisterId">II canister id (signer)</label>
+            <input
+              type="text"
+              id="iiCanisterId"
+              placeholder="e.g. rdmx6-jaaaa-aaaaa-aaadq-cai"
+            />
+          </div>
         </div>
-        <pre id="canisterEchoedAttributes"></pre>
-        <h3>Raw</h3>
-        <pre id="canisterEchoedAttributesRaw"></pre>
         <div class="actions">
           <button id="sendAttributesBtn">Send attributes to canister</button>
         </div>
       </section>
 
       <section id="card-send">
-        <h1>Notifications — send</h1>
-        <p class="hint">
+        <h1>Send</h1>
+        <p class="lede">
           II keeps no content and drops the notification id when it buffers, so
           a batch of N delivers N pings whatever ids they carry. What the user
           reads comes from the pending list.
         </p>
-        <div class="row">
-          <label for="hostUrl">Replica URL</label>
-          <input type="text" id="hostUrl" value="https://ic0.app/" />
-        </div>
-        <div class="row">
-          <label for="notificationCanisterId">II backend id</label>
-          <input
-            type="text"
-            id="notificationCanisterId"
-            value="u6uxm-3qaaa-aaaad-ags6a-cai"
-          />
+
+        <h2>Target</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="hostUrl">Replica URL</label>
+            <input type="text" id="hostUrl" value="https://ic0.app/" />
+          </div>
+          <div class="field">
+            <label for="notificationCanisterId">II backend id</label>
+            <input
+              type="text"
+              id="notificationCanisterId"
+              value="u6uxm-3qaaa-aaaad-ags6a-cai"
+            />
+          </div>
         </div>
         <div class="actions">
-          <button id="sendNotificationBtn">Send test notification</button>
+          <button class="go" id="sendNotificationBtn">
+            Send test notification
+          </button>
           <button id="whoamiBtn">Who Am I?</button>
         </div>
         <div id="sendNotificationResponse"></div>
         <div id="whoamiResponse"></div>
 
-        <fieldset>
-          <legend>Shaped batch</legend>
-          <div class="row">
+        <h2>Shaped batch</h2>
+        <div class="fields">
+          <div class="field">
             <label for="sendCount">Count</label>
             <input type="number" id="sendCount" value="1" min="1" />
           </div>
-          <div class="row">
+          <div class="field">
             <label for="sendUrgency">Urgency</label>
             <select id="sendUrgency">
               <option value="">(default)</option>
@@ -538,50 +690,53 @@
               <option value="high">high</option>
             </select>
           </div>
-          <div class="row">
+          <div class="field">
             <label for="sendExpiresIn">Expires in (s)</label>
             <input
               type="text"
               id="sendExpiresIn"
-              placeholder="blank = none; negative = rejected as invalid"
+              placeholder="negative = rejected as invalid"
             />
           </div>
-          <div class="row">
+          <div class="field">
             <label for="sendFixedId">Fixed id</label>
             <input
               type="text"
               id="sendFixedId"
-              placeholder="blank = one per notification"
+              placeholder="one id for the whole batch"
             />
           </div>
-          <div class="actions primary">
-            <button id="sendBatchBtn">Send batch</button>
-          </div>
-          <div id="sendBatchResponse"></div>
-        </fieldset>
+        </div>
+        <div class="actions">
+          <button class="go" id="sendBatchBtn">Send batch</button>
+        </div>
+        <div id="sendBatchResponse"></div>
       </section>
 
       <section id="card-pending">
-        <h1>Notifications — pending</h1>
-        <p class="hint">
+        <h1>Pending</h1>
+        <p class="lede">
           What the service worker pulls, rendered keyed by id: adding the same
           id twice replaces one notification instead of showing two, and
           removing an id closes it on every device at the next pull.
         </p>
-        <div class="row">
-          <label for="pendingId">Id</label>
-          <input type="text" id="pendingId" value="subject-1" />
+        <h2>Notification</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="pendingId">Id</label>
+            <input type="text" id="pendingId" value="subject-1" />
+          </div>
+          <div class="field">
+            <label for="pendingTitle">Title</label>
+            <input type="text" id="pendingTitle" value="A test notification" />
+          </div>
+          <div class="field">
+            <label for="pendingBody">Body</label>
+            <input type="text" id="pendingBody" placeholder="optional" />
+          </div>
         </div>
-        <div class="row">
-          <label for="pendingTitle">Title</label>
-          <input type="text" id="pendingTitle" value="A test notification" />
-        </div>
-        <div class="row">
-          <label for="pendingBody">Body</label>
-          <input type="text" id="pendingBody" placeholder="optional" />
-        </div>
-        <div class="actions primary">
-          <button id="addPendingBtn">Add / replace</button>
+        <div class="actions">
+          <button class="go" id="addPendingBtn">Add / replace</button>
           <button id="removePendingBtn">Remove this id</button>
           <button id="clearPendingBtn">Clear all</button>
           <button id="listPendingBtn">List pending</button>
@@ -591,6 +746,11 @@
 
       <section id="card-wellknown">
         <h1>Well-knowns</h1>
+        <p class="lede">
+          Serve the discovery documents II reads — including malformed and
+          redirecting variants, to check that it refuses them.
+        </p>
+
         <h2>/.well-known/ii-alternative-origins</h2>
         <div id="alternativeOrigins"></div>
         <div class="radios">
@@ -623,17 +783,19 @@
             <label for="redirect">Redirect</label>
           </span>
         </div>
-        <div class="row">
-          <label for="redirectLocation">Redirect to</label>
-          <input
-            type="text"
-            id="redirectLocation"
-            value="/.well-known/evil-alternative-origins"
-          />
-        </div>
-        <div class="row stack">
-          <label for="newAlternativeOrigins">New value</label>
-          <input type="text" id="newAlternativeOrigins" />
+        <div class="fields">
+          <div class="field">
+            <label for="redirectLocation">Redirect to</label>
+            <input
+              type="text"
+              id="redirectLocation"
+              value="/.well-known/evil-alternative-origins"
+            />
+          </div>
+          <div class="field">
+            <label for="newAlternativeOrigins">New value</label>
+            <input type="text" id="newAlternativeOrigins" />
+          </div>
         </div>
         <div class="actions">
           <button id="updateNewAlternativeOrigins">Update Value</button>
@@ -662,18 +824,21 @@
             <label for="appMetadataRedirect">Redirect</label>
           </span>
         </div>
-        <div class="row">
-          <label for="appMetadataRedirectLocation">Redirect to</label>
-          <input
-            type="text"
-            id="appMetadataRedirectLocation"
-            value="/.well-known/evil-app-metadata"
-          />
+        <div class="fields">
+          <div class="field">
+            <label for="appMetadataRedirectLocation">Redirect to</label>
+            <input
+              type="text"
+              id="appMetadataRedirectLocation"
+              value="/.well-known/evil-app-metadata"
+            />
+          </div>
         </div>
-        <div class="row stack">
-          <label for="newAppMetadata">New value</label>
-          <textarea id="newAppMetadata"></textarea>
+        <div class="h2row">
+          <h2>New value</h2>
+          <span class="aside">JSON</span>
         </div>
+        <textarea id="newAppMetadata"></textarea>
         <div class="actions">
           <button id="updateNewAppMetadata">Update Value</button>
         </div>
@@ -681,16 +846,26 @@
 
       <section id="card-protocol">
         <h1>Protocol tests</h1>
-        <div class="actions">
+        <p class="lede">
+          Drive the postMessage transport by hand, including the shapes II is
+          supposed to reject.
+        </p>
+        <h2>Window</h2>
+        <div class="actions" style="margin-top: 0">
           <button id="openIiWindowBtn">Open II tab</button>
-          <button id="invalidDataBtn">Send Invalid Data</button>
-          <button id="incompleteMessageBtn">Send incomplete message</button>
-          <button id="validMessageBtn">Send valid message</button>
           <button id="closeIIWindowBtn">Close II tab</button>
         </div>
-        <div class="row stack">
-          <label for="customMessage">Send custom message</label>
-          <input type="text" id="customMessage" />
+        <h2>Messages</h2>
+        <div class="actions" style="margin-top: 0">
+          <button id="validMessageBtn">Send valid message</button>
+          <button id="invalidDataBtn">Send Invalid Data</button>
+          <button id="incompleteMessageBtn">Send incomplete message</button>
+        </div>
+        <div class="fields" style="margin-top: 18px">
+          <div class="field">
+            <label for="customMessage">Custom message</label>
+            <input type="text" id="customMessage" />
+          </div>
         </div>
         <div class="actions">
           <button id="customMessageBtn">Send Message</button>
@@ -703,9 +878,71 @@
 
       <section id="card-agent">
         <h1>User agent</h1>
-        <p id="userAgent"></p>
-        <p>Is telegram? <span id="isTelegram"></span></p>
+        <p class="lede">What this browser reports about itself.</p>
+        <div class="out" id="userAgent"></div>
+        <div class="readout" style="margin-top: 16px">
+          <label>Is telegram?</label>
+          <div class="shell"><span class="v" id="isTelegram"></span></div>
+        </div>
       </section>
     </main>
+
+    <div class="rail" id="sessionRail">
+      <div class="railhead"><span>Session</span></div>
+
+      <div class="readout">
+        <label for="principal">Principal</label>
+        <div class="shell">
+          <span class="v" data-role="principal" id="principal"></span>
+          <span class="ph">—</span>
+          <button class="copy" data-copy="principal">copy</button>
+        </div>
+      </div>
+      <div class="readout">
+        <label>Authentication method</label>
+        <div class="shell">
+          <span class="v" data-role="authn-method"></span>
+          <span class="ph">—</span>
+        </div>
+      </div>
+      <div class="readout">
+        <label for="expiration">Expiry (ns from now)</label>
+        <div class="shell">
+          <span class="v" id="expiration"></span>
+          <span class="ph">—</span>
+          <button class="copy" data-copy="expiration">copy</button>
+        </div>
+      </div>
+
+      <div class="segmented" role="tablist">
+        <button role="tab" aria-selected="true" data-seg="delegation">
+          Delegation
+        </button>
+        <button role="tab" aria-selected="false" data-seg="attributes">
+          Attributes
+        </button>
+        <button role="tab" aria-selected="false" data-seg="raw">Raw</button>
+      </div>
+
+      <div class="tabgroup" data-tab="delegation">
+        <pre id="delegation"></pre>
+      </div>
+
+      <div class="tabgroup" data-tab="attributes">
+        <h3>Certified</h3>
+        <pre id="certifiedAttributes"></pre>
+        <h3>ICRC-3 (decoded)</h3>
+        <pre id="icrc3AttributesDecoded"></pre>
+        <h3>Canister echo</h3>
+        <pre id="canisterEchoedAttributes"></pre>
+      </div>
+
+      <div class="tabgroup" data-tab="raw">
+        <h3>ICRC-3 (raw)</h3>
+        <pre id="icrc3Attributes"></pre>
+        <h3>Canister echo (raw)</h3>
+        <pre id="canisterEchoedAttributesRaw"></pre>
+      </div>
+    </div>
   </body>
 </html>

@@ -78,6 +78,9 @@ const listPendingBtn = document.getElementById(
 const pendingResponseEl = document.getElementById(
   "pendingResponse",
 ) as HTMLDivElement;
+const pendingCountEl = document.getElementById(
+  "pendingCount",
+) as HTMLSpanElement;
 const sendNotificationResponseEl = document.getElementById(
   "sendNotificationResponse",
 ) as HTMLDivElement;
@@ -922,6 +925,7 @@ const renderPending = async () => {
             (n) => `${n.id}: ${n.title}${n.body[0] ? ` — ${n.body[0]}` : ""}`,
           )
           .join("\n");
+  pendingCountEl.innerText = pending.length === 0 ? "" : `${pending.length}`;
 };
 
 const withPending = (action: (actor: any) => Promise<unknown>) => async () => {
@@ -1221,3 +1225,47 @@ ReactDOM.createRoot(document.getElementById("root-vc-flow")!).render(
     <App />
   </React.StrictMode>,
 );
+
+// --- shell chrome -----------------------------------------------------------
+// Mark the nav entry whose panel the fragment selects.
+const markCurrentNav = () => {
+  const hash = window.location.hash;
+  document.querySelectorAll("nav a").forEach((a) => {
+    const href = a.getAttribute("href") ?? "";
+    a.classList.toggle("current", href !== "#" && href === hash);
+  });
+};
+window.addEventListener("hashchange", markCurrentNav);
+markCurrentNav();
+
+// The session readouts are all read with innerText, which is empty for a
+// display:none element, so filtering starts only once a human picks a segment.
+const sessionRail = document.getElementById("sessionRail");
+document
+  .querySelectorAll<HTMLButtonElement>(".segmented button")
+  .forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document
+        .querySelectorAll(".segmented button")
+        .forEach((other) =>
+          other.setAttribute("aria-selected", String(other === tab)),
+        );
+      sessionRail?.setAttribute("data-tabs", tab.dataset.seg ?? "delegation");
+    });
+  });
+
+document.querySelectorAll<HTMLButtonElement>(".copy").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const id = btn.dataset.copy;
+    const text = id ? (document.getElementById(id)?.innerText ?? "") : "";
+    if (text === "") return;
+    try {
+      await navigator.clipboard.writeText(text);
+      const was = btn.innerText;
+      btn.innerText = "copied";
+      setTimeout(() => (btn.innerText = was), 1200);
+    } catch {
+      // A denied clipboard permission is not worth interrupting the page for.
+    }
+  });
+});
