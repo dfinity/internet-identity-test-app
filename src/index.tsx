@@ -40,6 +40,44 @@ const sendNotificationBtn = document.getElementById(
 const notificationCanisterIdEl = document.getElementById(
   "notificationCanisterId",
 ) as HTMLInputElement;
+const sendCountEl = document.getElementById("sendCount") as HTMLInputElement;
+const sendUrgencyEl = document.getElementById(
+  "sendUrgency",
+) as HTMLSelectElement;
+const sendExpiresInEl = document.getElementById(
+  "sendExpiresIn",
+) as HTMLInputElement;
+const sendFixedIdEl = document.getElementById(
+  "sendFixedId",
+) as HTMLInputElement;
+const sendBatchBtn = document.getElementById(
+  "sendBatchBtn",
+) as HTMLButtonElement;
+const sendBatchResponseEl = document.getElementById(
+  "sendBatchResponse",
+) as HTMLDivElement;
+const pendingIdEl = document.getElementById("pendingId") as HTMLInputElement;
+const pendingTitleEl = document.getElementById(
+  "pendingTitle",
+) as HTMLInputElement;
+const pendingBodyEl = document.getElementById(
+  "pendingBody",
+) as HTMLInputElement;
+const addPendingBtn = document.getElementById(
+  "addPendingBtn",
+) as HTMLButtonElement;
+const removePendingBtn = document.getElementById(
+  "removePendingBtn",
+) as HTMLButtonElement;
+const clearPendingBtn = document.getElementById(
+  "clearPendingBtn",
+) as HTMLButtonElement;
+const listPendingBtn = document.getElementById(
+  "listPendingBtn",
+) as HTMLButtonElement;
+const pendingResponseEl = document.getElementById(
+  "pendingResponse",
+) as HTMLDivElement;
 const sendNotificationResponseEl = document.getElementById(
   "sendNotificationResponse",
 ) as HTMLDivElement;
@@ -199,6 +237,43 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
       [IDL.Text],
       [],
     ),
+    send_notifications: IDL.Func(
+      [
+        IDL.Principal,
+        IDL.Principal,
+        IDL.Text,
+        IDL.Opt(
+          IDL.Record({
+            count: IDL.Opt(IDL.Nat32),
+            urgency: IDL.Opt(IDL.Text),
+            expires_in_secs: IDL.Opt(IDL.Int64),
+            fixed_id: IDL.Opt(IDL.Text),
+          }),
+        ),
+      ],
+      [IDL.Text],
+      [],
+    ),
+    ii_pending_notifications: IDL.Func(
+      [],
+      [
+        IDL.Vec(
+          IDL.Record({
+            id: IDL.Text,
+            title: IDL.Text,
+            body: IDL.Opt(IDL.Text),
+          }),
+        ),
+      ],
+      ["query"],
+    ),
+    add_pending_notification: IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Opt(IDL.Text)],
+      [IDL.Nat32],
+      [],
+    ),
+    remove_pending_notification: IDL.Func([IDL.Text], [IDL.Nat32], []),
+    clear_pending_notifications: IDL.Func([], [IDL.Nat32], []),
   });
 };
 
@@ -775,6 +850,121 @@ sendNotificationBtn.addEventListener("click", async () => {
     }`;
   }
 });
+
+// Shaped batches and the pending list both talk to this app as the signed-in
+// identity, which is the same principal II's service worker pulls as.
+const appActor = async () => {
+  const agent = await HttpAgent.create({
+    host: hostUrlEl.value,
+    identity: delegationIdentity,
+    shouldFetchRootKey: true,
+  });
+  return Actor.createActor(idlFactory, {
+    agent,
+    canisterId: Principal.fromText(readCanisterId()),
+  });
+};
+
+const optional = <T,>(value: T | undefined): [] | [T] =>
+  value === undefined ? [] : [value];
+
+sendBatchBtn.addEventListener("click", async () => {
+  if (delegationIdentity === undefined) {
+    showError("Sign in first — the recipient is your per-app principal.");
+    return;
+  }
+  const iiText = notificationCanisterIdEl.value.trim();
+  if (iiText === "") {
+    showError("Set the II backend canister id first.");
+    return;
+  }
+  sendBatchResponseEl.innerText = "Sending...";
+  try {
+    const expiresIn = sendExpiresInEl.value.trim();
+    const urgency = sendUrgencyEl.value;
+    const fixedId = sendFixedIdEl.value.trim();
+    const actor = await appActor();
+    const result = (await actor.send_notifications(
+      Principal.fromText(iiText),
+      delegationIdentity.getPrincipal(),
+      window.location.origin,
+      [
+        {
+          count: optional(Number(sendCountEl.value) || 1),
+          urgency: optional(urgency === "" ? undefined : urgency),
+          expires_in_secs: optional(
+            expiresIn === "" ? undefined : BigInt(expiresIn),
+          ),
+          fixed_id: optional(fixedId === "" ? undefined : fixedId),
+        },
+      ],
+    )) as string;
+    sendBatchResponseEl.innerText = result;
+  } catch (err) {
+    sendBatchResponseEl.innerText = `Failed: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+  }
+});
+
+const renderPending = async () => {
+  const actor = await appActor();
+  const pending = (await actor.ii_pending_notifications()) as {
+    id: string;
+    title: string;
+    body: [] | [string];
+  }[];
+  pendingResponseEl.innerText =
+    pending.length === 0
+      ? "nothing pending"
+      : pending
+          .map(
+            (n) => `${n.id}: ${n.title}${n.body[0] ? ` — ${n.body[0]}` : ""}`,
+          )
+          .join("\n");
+};
+
+const withPending = (action: (actor: any) => Promise<unknown>) => async () => {
+  if (delegationIdentity === undefined) {
+    showError("Sign in first — pending notifications are per-principal.");
+    return;
+  }
+  pendingResponseEl.innerText = "Working...";
+  try {
+    await action(await appActor());
+    await renderPending();
+  } catch (err) {
+    pendingResponseEl.innerText = `Failed: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+  }
+};
+
+addPendingBtn.addEventListener(
+  "click",
+  withPending((actor) => {
+    const body = pendingBodyEl.value.trim();
+    return actor.add_pending_notification(
+      pendingIdEl.value.trim(),
+      pendingTitleEl.value.trim(),
+      optional(body === "" ? undefined : body),
+    );
+  }),
+);
+removePendingBtn.addEventListener(
+  "click",
+  withPending((actor) =>
+    actor.remove_pending_notification(pendingIdEl.value.trim()),
+  ),
+);
+clearPendingBtn.addEventListener(
+  "click",
+  withPending((actor) => actor.clear_pending_notifications()),
+);
+listPendingBtn.addEventListener(
+  "click",
+  withPending(() => Promise.resolve()),
+);
 
 whoamiBtn.addEventListener("click", async () => {
   const canisterId = Principal.fromText(readCanisterId());

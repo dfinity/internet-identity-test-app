@@ -3,7 +3,9 @@ use asset_util::{collect_assets, Asset, CertifiedAssets, ContentEncoding, Conten
 use candid::{CandidType, Deserialize, Principal};
 use ic_cdk::api;
 use ic_cdk_macros::{init, post_upgrade, query, update};
-use ii_notification_client::{well_known::SendersDocument, Notification, NotificationClient};
+use ii_notification_client::{
+    well_known::SendersDocument, Notification, NotificationClient, NotificationUrgency,
+};
 use include_dir::{include_dir, Dir};
 use serde_bytes::ByteBuf;
 use std::cell::RefCell;
@@ -62,24 +64,89 @@ fn caller_attributes() -> CallerAttributes {
     }
 }
 
-// ===== Notifications: send a test notification through II =====
+// ===== Notifications: send test notifications through II =====
 //
-// The frontend calls this after sign-in; this canister then calls II's
-// `notification_send` as the (canister) sender, through the client crate every
-// sending dApp is meant to use. II authorizes the caller by fetching this
-// origin's `/.well-known/ii-notification-senders`, so this only works when the
-// app runs at a public canister origin II can reach — not localhost. `origin` is
-// the origin the user consented from (the frontend passes its own
-// `window.location.origin`); `recipient` is the principal II handed this app at
-// sign-in.
+// Two halves, because delivery and content travel separately. `send_notification`
+// asks II to ping the recipient's devices: II keeps no content, and drops the
+// notification id at buffering, so two sends are two pings no matter what ids
+// they carry. What the user actually reads comes from `ii_pending_notifications`
+// below, which II's service worker pulls as the recipient and renders keyed by
+// each item's id — so that id, not the send, is what dedups and replaces.
+//
+// Sending only works from a public canister origin II can reach, since II
+// authorizes the caller by fetching this origin's
+// `/.well-known/ii-notification-senders`. `origin` is the origin the user
+// consented from; `recipient` is the principal II handed this app at sign-in.
+
+/// How to shape a batch, so one endpoint can exercise II's accept path: a
+/// hundred at once, an already-expired notification, a chosen urgency, repeated
+/// ids.
+#[derive(CandidType, Deserialize)]
+struct SendOptions {
+    /// Notifications in the batch. Absent = 1.
+    count: Option<u32>,
+    /// `low` | `normal` | `high`. Absent = II's default.
+    urgency: Option<String>,
+    /// Relative expiry. Negative puts it in the past, which II rejects as
+    /// `invalid` — the point of allowing it.
+    expires_in_secs: Option<i64>,
+    /// Reused verbatim for every notification in the batch when set, so a
+    /// repeated id can be shown not to dedup. Absent = one id per notification.
+    fixed_id: Option<String>,
+}
 
 #[update]
 async fn send_notification(ii: Principal, recipient: Principal, origin: String) -> String {
-    let id = api::time().to_be_bytes().to_vec();
-    let client = NotificationClient::new(ii, origin);
-    match client.notify(vec![Notification::new(id, recipient)]).await {
+    send_notifications(ii, recipient, origin, None).await
+}
+
+#[update]
+async fn send_notifications(
+    ii: Principal,
+    recipient: Principal,
+    origin: String,
+    options: Option<SendOptions>,
+) -> String {
+    let options = options.unwrap_or(SendOptions {
+        count: None,
+        urgency: None,
+        expires_in_secs: None,
+        fixed_id: None,
+    });
+    let count = options.count.unwrap_or(1);
+    let urgency = match options.urgency.as_deref() {
+        None => None,
+        Some("low") => Some(NotificationUrgency::Low),
+        Some("normal") => Some(NotificationUrgency::Normal),
+        Some("high") => Some(NotificationUrgency::High),
+        Some(other) => return format!("unknown urgency {other:?}, expected low|normal|high"),
+    };
+    let expires_at = options.expires_in_secs.map(|secs| {
+        let now = api::time() as i128;
+        (now + secs as i128 * 1_000_000_000).max(0) as u64
+    });
+
+    let now = api::time();
+    let notifications = (0..count)
+        .map(|index| {
+            let id = match &options.fixed_id {
+                Some(fixed) => fixed.as_bytes().to_vec(),
+                None => format!("{now}-{index}").into_bytes(),
+            };
+            let mut notification = Notification::new(id, recipient);
+            notification.urgency = urgency;
+            notification.expires_at = expires_at;
+            notification
+        })
+        .collect();
+
+    match NotificationClient::new(ii, origin)
+        .notify(notifications)
+        .await
+    {
         Ok(response) => format!(
-            "accepted={} rejected={:?} retry_after_ms={:?} resend_epoch={:?}",
+            "sent={} accepted={} rejected={:?} retry_after_ms={:?} resend_epoch={:?}",
+            count,
             response.accepted.unwrap_or(0),
             response.rejected.unwrap_or_default(),
             response.retry_after_ms,
@@ -87,6 +154,74 @@ async fn send_notification(ii: Principal, recipient: Principal, origin: String) 
         ),
         Err(err) => format!("call failed: {err}"),
     }
+}
+
+/// One notification this app has pending for a caller, in the shape II's
+/// service worker pulls. `id` becomes the on-screen notification's tag, so
+/// re-adding an id replaces that notification instead of adding another, and
+/// dropping an id closes it on every device at the next pull.
+#[derive(CandidType, Deserialize, Clone)]
+struct PendingNotification {
+    id: String,
+    title: String,
+    body: Option<String>,
+}
+
+thread_local! {
+    /// Keyed by caller: the frontend and the service worker both authenticate as
+    /// the same per-app principal, so what the page queues is what the worker
+    /// pulls.
+    static PENDING: RefCell<Vec<(Principal, Vec<PendingNotification>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+fn with_pending<R>(caller: Principal, f: impl FnOnce(&mut Vec<PendingNotification>) -> R) -> R {
+    PENDING.with_borrow_mut(|all| {
+        if let Some(index) = all.iter().position(|(principal, _)| *principal == caller) {
+            return f(&mut all[index].1);
+        }
+        all.push((caller, Vec::new()));
+        let last = all.len() - 1;
+        f(&mut all[last].1)
+    })
+}
+
+/// The pull interface II's service worker calls as the recipient.
+#[query]
+fn ii_pending_notifications() -> Vec<PendingNotification> {
+    with_pending(api::msg_caller(), |pending| pending.clone())
+}
+
+/// Queues a notification for the caller, replacing any with the same `id` — the
+/// same thing a second add of one id does on screen.
+#[update]
+fn add_pending_notification(id: String, title: String, body: Option<String>) -> u32 {
+    with_pending(api::msg_caller(), |pending| {
+        let entry = PendingNotification { id, title, body };
+        match pending.iter().position(|existing| existing.id == entry.id) {
+            Some(index) => pending[index] = entry,
+            None => pending.push(entry),
+        }
+        pending.len() as u32
+    })
+}
+
+/// Drops one pending notification, which closes it on every device at the next
+/// pull.
+#[update]
+fn remove_pending_notification(id: String) -> u32 {
+    with_pending(api::msg_caller(), |pending| {
+        pending.retain(|existing| existing.id != id);
+        pending.len() as u32
+    })
+}
+
+#[update]
+fn clear_pending_notifications() -> u32 {
+    with_pending(api::msg_caller(), |pending| {
+        pending.clear();
+        0
+    })
 }
 
 /// Function to update the asset /.well-known/ii-alternative-origins.

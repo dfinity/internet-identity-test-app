@@ -178,6 +178,74 @@
           <div id="sendNotificationResponse"></div>
         </div>
         <div>
+          <h3>Send a shaped batch</h3>
+          <p style="max-width: 46em">
+            II keeps no content and drops the notification id when it buffers,
+            so a batch of N delivers N pings whatever ids they carry. What the
+            user reads comes from the pending list below.
+          </p>
+          <label for="sendCount" style="display: inline-block; width: 120px"
+            >Count:</label
+          >
+          <input type="number" id="sendCount" value="1" min="1" />
+          <br />
+          <label for="sendUrgency" style="display: inline-block; width: 120px"
+            >Urgency:</label
+          >
+          <select id="sendUrgency">
+            <option value="">(default)</option>
+            <option value="low">low</option>
+            <option value="normal">normal</option>
+            <option value="high">high</option>
+          </select>
+          <br />
+          <label for="sendExpiresIn" style="display: inline-block; width: 120px"
+            >Expires in (s):</label
+          >
+          <input type="text" id="sendExpiresIn" placeholder="blank = none" />
+          <span>negative lands in the past, which II rejects as invalid</span>
+          <br />
+          <label for="sendFixedId" style="display: inline-block; width: 120px"
+            >Fixed id:</label
+          >
+          <input
+            type="text"
+            id="sendFixedId"
+            placeholder="blank = one per notification"
+          />
+          <br />
+          <button id="sendBatchBtn">Send batch</button>
+          <div id="sendBatchResponse"></div>
+        </div>
+        <div>
+          <h3>Pending notifications (what the service worker pulls)</h3>
+          <p style="max-width: 46em">
+            The worker renders these keyed by id, so adding the same id twice
+            replaces one notification instead of showing two, and removing an id
+            closes it on every device at the next pull.
+          </p>
+          <label for="pendingId" style="display: inline-block; width: 120px"
+            >Id:</label
+          >
+          <input type="text" id="pendingId" value="subject-1" />
+          <br />
+          <label for="pendingTitle" style="display: inline-block; width: 120px"
+            >Title:</label
+          >
+          <input type="text" id="pendingTitle" value="A test notification" />
+          <br />
+          <label for="pendingBody" style="display: inline-block; width: 120px"
+            >Body:</label
+          >
+          <input type="text" id="pendingBody" placeholder="optional" />
+          <br />
+          <button id="addPendingBtn">Add / replace</button>
+          <button id="removePendingBtn">Remove this id</button>
+          <button id="clearPendingBtn">Clear all</button>
+          <button id="listPendingBtn">List pending</button>
+          <div id="pendingResponse"></div>
+        </div>
+        <div>
           <label for="newAlternativeOrigins" style="display: inline-block">
             Set new value for /.well-known/ii-alternative-origins:
           </label>
