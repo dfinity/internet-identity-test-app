@@ -2,8 +2,8 @@ use crate::AlternativeOriginsMode::{CertifiedContent, Redirect};
 use asset_util::{collect_assets, Asset, CertifiedAssets, ContentEncoding, ContentType};
 use candid::{CandidType, Deserialize, Principal};
 use ic_cdk::api;
-use ic_cdk::call::Call;
 use ic_cdk_macros::{init, post_upgrade, query, update};
+use ii_notification_client::{well_known::SendersDocument, Notification, NotificationClient};
 use include_dir::{include_dir, Dir};
 use serde_bytes::ByteBuf;
 use std::cell::RefCell;
@@ -65,89 +65,27 @@ fn caller_attributes() -> CallerAttributes {
 // ===== Notifications: send a test notification through II =====
 //
 // The frontend calls this after sign-in; this canister then calls II's
-// `notification_send` as the (canister) sender. II authorizes the caller by
-// fetching this origin's `/.well-known/ii-notification-senders`, so this only
-// works when the app runs at a public canister origin II can reach — not
-// localhost. `origin` is the origin the user consented from (the frontend
-// passes its own `window.location.origin`); `recipient` is the user's per-app
-// principal (its delegated identity's principal for this origin).
-
-#[derive(CandidType, Deserialize)]
-enum NotificationUrgency {
-    #[serde(rename = "low")]
-    Low,
-    #[serde(rename = "normal")]
-    Normal,
-    #[serde(rename = "high")]
-    High,
-}
-
-#[derive(CandidType, Deserialize)]
-struct Notification {
-    id: ByteBuf,
-    recipient: Principal,
-    urgency: Option<NotificationUrgency>,
-    expires_at: Option<u64>,
-}
-
-#[derive(CandidType, Deserialize)]
-struct NotificationSendRequest {
-    notifications: Option<Vec<Notification>>,
-    origin: Option<String>,
-}
-
-#[derive(CandidType, Deserialize, Debug)]
-enum NotificationRejection {
-    #[serde(rename = "no_consent")]
-    NoConsent,
-    #[serde(rename = "not_subscribed")]
-    NotSubscribed,
-    #[serde(rename = "invalid")]
-    Invalid,
-}
-
-#[derive(CandidType, Deserialize, Debug)]
-struct RejectedNotification {
-    id: ByteBuf,
-    reason: NotificationRejection,
-}
-
-#[derive(CandidType, Deserialize)]
-struct NotificationSendResponse {
-    accepted: Option<u32>,
-    rejected: Option<Vec<RejectedNotification>>,
-    retry_after_ms: Option<u32>,
-    resend_epoch: Option<u64>,
-}
+// `notification_send` as the (canister) sender, through the client crate every
+// sending dApp is meant to use. II authorizes the caller by fetching this
+// origin's `/.well-known/ii-notification-senders`, so this only works when the
+// app runs at a public canister origin II can reach — not localhost. `origin` is
+// the origin the user consented from (the frontend passes its own
+// `window.location.origin`); `recipient` is the principal II handed this app at
+// sign-in.
 
 #[update]
 async fn send_notification(ii: Principal, recipient: Principal, origin: String) -> String {
-    let id = ByteBuf::from(api::time().to_be_bytes().to_vec());
-    let request = NotificationSendRequest {
-        notifications: Some(vec![Notification {
-            id,
-            recipient,
-            urgency: None,
-            expires_at: None,
-        }]),
-        origin: Some(origin),
-    };
-    let response = match Call::unbounded_wait(ii, "notification_send")
-        .with_arg(request)
-        .await
-    {
-        Ok(response) => response,
-        Err(err) => return format!("call failed: {err}"),
-    };
-    match response.candid::<NotificationSendResponse>() {
-        Ok(resp) => format!(
+    let id = api::time().to_be_bytes().to_vec();
+    let client = NotificationClient::new(ii, origin);
+    match client.notify(vec![Notification::new(id, recipient)]).await {
+        Ok(response) => format!(
             "accepted={} rejected={:?} retry_after_ms={:?} resend_epoch={:?}",
-            resp.accepted.unwrap_or(0),
-            resp.rejected.unwrap_or_default(),
-            resp.retry_after_ms,
-            resp.resend_epoch,
+            response.accepted.unwrap_or(0),
+            response.rejected.unwrap_or_default(),
+            response.retry_after_ms,
+            response.resend_epoch,
         ),
-        Err(err) => format!("decode failed: {err}"),
+        Err(err) => format!("call failed: {err}"),
     }
 }
 
@@ -404,7 +342,7 @@ fn init_assets(alternative_origins: String, extra_auth_callbacks: Vec<String>) {
 
     // Sender allowlist: authorize this canister to send notifications for its
     // own origin. II fetches this at consent time.
-    let senders = serde_json::json!({ "senders": [canister_id.to_text()] }).to_string();
+    let senders = SendersDocument::new([canister_id]).to_json();
     assets.push(Asset {
         url_path: NOTIFICATION_SENDERS_PATH.to_string(),
         content: senders.into_bytes(),

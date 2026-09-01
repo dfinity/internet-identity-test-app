@@ -368,6 +368,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "ii-notification-client"
+version = "0.1.0"
+source = "git+https://github.com/dfinity/internet-identity-notifications-client?branch=main#0fd300b0833b95915c0001008b92b038b166be37"
+dependencies = [
+ "candid",
+ "ic-cdk",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+]
+
+[[package]]
 name = "include_dir"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -677,6 +689,7 @@ dependencies = [
  "candid",
  "ic-cdk",
  "ic-cdk-macros",
+ "ii-notification-client",
  "include_dir",
  "serde",
  "serde_bytes",

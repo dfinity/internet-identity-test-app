@@ -24,6 +24,7 @@ asset_util = { path = "asset_util" }
 candid = "0.10"
 ic-cdk = { workspace = true }
 ic-cdk-macros = "0.20"
+ii-notification-client = { git = "https://github.com/dfinity/internet-identity-notifications-client", branch = "main" }
 serde = { workspace = true }
 serde_bytes = "0.11"
 serde_json = "1"
