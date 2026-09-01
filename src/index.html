@@ -1,146 +1,431 @@
 <html>
   <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script type="module" src="./index.tsx"></script>
   </head>
   <body>
     <style>
+      :root {
+        --bg: #f4f5f8;
+        --card: #ffffff;
+        --ink: #16181d;
+        --muted: #5d6470;
+        --line: #dfe3ea;
+        --accent: #3d5afe;
+        --ok: #1b7f4d;
+        --warn: #a25b00;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101216;
+          --card: #181b21;
+          --ink: #e6e8ee;
+          --muted: #9aa2b1;
+          --line: #2a2f38;
+          --accent: #8c9eff;
+          --ok: #57c98d;
+          --warn: #e0a458;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          14px/1.5 system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: var(--card);
+        border-bottom: 1px solid var(--line);
+        padding: 10px 20px;
+      }
+      header h1 {
+        font-size: 15px;
+        margin: 0 0 6px;
+        letter-spacing: 0.02em;
+      }
+      .status {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 22px;
+        font-size: 12px;
+      }
+      .status > span {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        min-width: 0;
+      }
+      .status b {
+        color: var(--muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.06em;
+      }
+      .status .val {
+        font-family: var(--mono);
+        overflow-wrap: anywhere;
+      }
+      main {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+        gap: 14px;
+        align-items: start;
+        padding: 16px 20px 40px;
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px 16px;
+        min-width: 0;
+      }
+      section.wide {
+        grid-column: 1 / -1;
+      }
+      h1,
+      h2,
+      h3 {
+        line-height: 1.25;
+      }
+      section > h1 {
+        font-size: 14px;
+        margin: 0 0 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line);
+        letter-spacing: 0.02em;
+      }
+      h2,
+      h3 {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 14px 0 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      section > h2:first-of-type {
+        margin-top: 0;
+      }
+      p.hint {
+        color: var(--muted);
+        margin: 0 0 8px;
+        font-size: 12.5px;
+        max-width: 60ch;
+      }
+      /* One grid per field: labels self-align, so no per-label widths. */
+      .row {
+        display: grid;
+        grid-template-columns: minmax(120px, 34%) minmax(0, 1fr);
+        gap: 6px 10px;
+        align-items: center;
+        margin: 0 0 6px;
+      }
+      .row > label {
+        color: var(--muted);
+      }
+      .row.stack {
+        grid-template-columns: 1fr;
+      }
+      input[type="text"],
+      input[type="number"],
+      select,
+      textarea {
+        width: 100%;
+        font: inherit;
+        padding: 5px 7px;
+        color: var(--ink);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+      }
+      textarea {
+        min-height: 58px;
+        font-family: var(--mono);
+        resize: vertical;
+      }
+      input[type="checkbox"],
+      input[type="radio"] {
+        justify-self: start;
+        width: 16px;
+        height: 16px;
+        accent-color: var(--accent);
+      }
+      button {
+        font: inherit;
+        font-weight: 500;
+        padding: 6px 12px;
+        color: var(--ink);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0 0;
+      }
+      .actions.primary button:first-child {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      /* Every result box: mono, scrollable, never widens the card. */
+      .out,
+      #delegation,
+      #certifiedAttributes,
+      #icrc3AttributesDecoded,
+      #icrc3Attributes,
+      #canisterEchoedAttributes,
+      #canisterEchoedAttributesRaw,
+      #whoamiResponse,
+      #sendNotificationResponse,
+      #sendBatchResponse,
+      #pendingResponse,
+      #alternativeOrigins,
+      #appMetadata,
+      /* `:not(:empty)` matters: e2e asserts #principal is hidden until sign-in,
+         so an empty readout must keep a zero-size box. */
+      #principal:not(:empty),
+      #expiration:not(:empty),
+      [data-role="authn-method"]:not(:empty) {
+        font-family: var(--mono);
+        font-size: 12px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        overflow-x: auto;
+        margin: 0;
+        padding: 7px 9px;
+        min-height: 30px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+      }
+      /* Short fields pair up instead of each taking a whole row. */
+      .fields {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+        gap: 8px 12px;
+      }
+      .fields > div {
+        min-width: 0;
+      }
+      .fields label {
+        display: block;
+        color: var(--muted);
+        font-size: 11.5px;
+        margin-bottom: 2px;
+      }
+      /* Booleans in one wrapped cluster rather than four stacked rows. */
+      .checks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 18px;
+        margin: 10px 0 2px;
+      }
+      .checks > span {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .checks label {
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 6px;
+        margin-top: 8px;
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 11.5px;
+        padding: 2px 8px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+      }
+      nav a:hover {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      section {
+        scroll-margin-top: 70px;
+      }
+      .radios {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        align-items: center;
+        margin: 0 0 8px;
+      }
+      .radios > span {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .radios label {
+        color: var(--muted);
+      }
+      fieldset {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin: 0 0 12px;
+      }
+      legend {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 0 4px;
+      }
       .postMessage {
-        border: black solid thin;
-        padding: 1rem;
-        margin: 1rem 0;
-        overflow-wrap: break-word;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 8px 10px;
+        margin: 8px 0;
+        overflow-wrap: anywhere;
+        font-family: var(--mono);
+        font-size: 12px;
       }
-
       .postMessage-title {
-        font-weight: bold;
+        font-weight: 600;
       }
-
       .received {
-        background-color: lightblue;
+        border-left: 3px solid var(--accent);
       }
-
       .sent {
-        background-color: lightgreen;
+        border-left: 3px solid var(--ok);
       }
     </style>
+
+    <header>
+      <h1>Internet Identity — test app</h1>
+      <nav>
+        <a href="#card-signin">Sign in</a>
+        <a href="#card-session">Session</a>
+        <a href="#card-send">Notifications: send</a>
+        <a href="#card-pending">Notifications: pending</a>
+        <a href="#card-wellknown">Well-knowns</a>
+        <a href="#card-protocol">Protocol</a>
+        <a href="#root-vc-flow">Credentials</a>
+      </nav>
+    </header>
+
     <main>
-      <section>
-        <h1>Identity</h1>
-        <h2>Sign In</h2>
-        <div>
-          <label for="iiUrl" style="display: inline-block; width: 200px"
-            >Identity Provider:
-          </label>
-          <input
-            type="text"
-            data-role="ii-url"
-            id="iiUrl"
-            value="http://localhost:5173"
-          />
+      <section id="card-signin">
+        <h1>Sign in</h1>
+        <div class="fields">
+          <div>
+            <label for="iiUrl">Identity Provider</label>
+            <input
+              type="text"
+              data-role="ii-url"
+              id="iiUrl"
+              value="http://localhost:5173"
+            />
+          </div>
+          <div>
+            <label for="transport">Transport</label>
+            <select id="transport">
+              <option value="window">Window (popup / postMessage)</option>
+              <option value="redirect">Redirect (ICRC-167 URL)</option>
+            </select>
+          </div>
+          <div>
+            <label for="maxTimeToLive">Max time to live (ms)</label>
+            <input
+              type="number"
+              id="maxTimeToLive"
+              placeholder="(use default)"
+            />
+          </div>
+          <div>
+            <label for="derivationOrigin">Derivation origin</label>
+            <input
+              type="text"
+              id="derivationOrigin"
+              placeholder="(use default)"
+            />
+          </div>
+          <div>
+            <label for="autoSelectionPrincipal">Auto-select principal</label>
+            <input
+              type="text"
+              id="autoSelectionPrincipal"
+              placeholder="(none)"
+            />
+          </div>
+          <div>
+            <label for="icrc3Nonce">ICRC-3 nonce (base64)</label>
+            <input type="text" id="icrc3Nonce" />
+          </div>
         </div>
-        <div>
-          <label for="maxTimeToLive" style="display: inline-block; width: 200px"
-            >Max Time to live (ms):</label
-          >
-          <input type="number" id="maxTimeToLive" placeholder="(use default)" />
+        <div class="checks">
+          <span>
+            <input type="checkbox" checked id="allowPinAuthentication" />
+            <label for="allowPinAuthentication"
+              >PIN Authentication allowed:</label
+            >
+          </span>
+          <span>
+            <input type="checkbox" id="requestNotifications" />
+            <label for="requestNotifications">Request notifications:</label>
+          </span>
+          <span>
+            <input type="checkbox" id="useIcrc25" />
+            <label for="useIcrc25">Use ICRC-25 protocol:</label>
+          </span>
+          <span>
+            <input type="checkbox" id="useIcrc3Attributes" />
+            <label for="useIcrc3Attributes">Use ICRC-3 attributes:</label>
+          </span>
         </div>
-        <div>
-          <label
-            for="derivationOrigin"
-            style="display: inline-block; width: 200px"
-            >Derivation Origin:</label
-          >
-          <input
-            type="text"
-            id="derivationOrigin"
-            placeholder="(use default)"
-          />
-        </div>
-        <div>
-          <label
-            for="autoSelectionPrincipal"
-            style="display: inline-block; width: 200px"
-            >Auto-select identity for known principal:</label
-          >
-          <input type="text" id="autoSelectionPrincipal" placeholder="(none)" />
-        </div>
-        <div>
-          <label
-            for="allowPinAuthentication"
-            style="display: inline-block; width: 200px"
-            >PIN Authentication allowed:</label
-          >
-          <input type="checkbox" checked id="allowPinAuthentication" />
-        </div>
-        <div>
-          <label
-            for="requestNotifications"
-            style="display: inline-block; width: 200px"
-            >Request notifications:</label
-          >
-          <input type="checkbox" id="requestNotifications" />
-        </div>
-        <div>
-          <label for="transport" style="display: inline-block; width: 200px"
-            >Transport:</label
-          >
-          <select id="transport">
-            <option value="window">Window (popup / postMessage)</option>
-            <option value="redirect">Redirect (ICRC-167 URL)</option>
-          </select>
-        </div>
-        <div>
-          <label for="useIcrc25" style="display: inline-block; width: 200px"
-            >Use ICRC-25 protocol:</label
-          >
-          <input type="checkbox" id="useIcrc25" />
-        </div>
-        <div>
-          <label
-            for="useIcrc3Attributes"
-            style="display: inline-block; width: 200px"
-            >Use ICRC-3 attributes:</label
-          >
-          <input type="checkbox" id="useIcrc3Attributes" />
-        </div>
-        <div>
-          <label for="icrc3Nonce" style="display: inline-block; width: 200px"
-            >ICRC-3 nonce (base64):</label
-          >
-          <input type="text" id="icrc3Nonce" />
-        </div>
-        <div>
-          <label
-            for="requestAttributes"
-            style="display: inline-block; width: 200px"
-            >Request attributes:</label
-          >
+        <div class="row stack">
+          <label for="requestAttributes">Request attributes</label>
           <textarea id="requestAttributes"></textarea>
         </div>
-        <button data-action="authenticate" id="signinBtn">Sign In</button>
-        <h3>/.well-known/ii-alternative-origins</h3>
-        <div id="alternativeOrigins"></div>
-        <h3>/.well-known/ii-app-metadata</h3>
-        <div id="appMetadata"></div>
-        <h3>Principal:</h3>
+        <div class="actions primary">
+          <button data-action="authenticate" id="signinBtn">Sign In</button>
+        </div>
+      </section>
+
+      <section id="card-session">
+        <h1>Session</h1>
+        <h2>Principal</h2>
         <div data-role="principal" id="principal"></div>
-        <h3>Authentication Method:</h3>
+        <h2>Authentication method</h2>
         <div data-role="authn-method"></div>
-        <h3>Delegation:</h3>
-        <pre id="delegation"></pre>
-        <h3>Expiry (ns from now):</h3>
+        <h2>Expiry (ns from now)</h2>
         <div id="expiration"></div>
-        <h3>Certified Attributes:</h3>
+        <h2>Delegation</h2>
+        <pre id="delegation"></pre>
+        <h2>Certified attributes</h2>
         <pre id="certifiedAttributes"></pre>
-        <h3>ICRC-3 Attributes (decoded):</h3>
+        <h2>ICRC-3 attributes (decoded)</h2>
         <pre id="icrc3AttributesDecoded"></pre>
-        <h3>ICRC-3 Attributes (raw):</h3>
+        <h2>ICRC-3 attributes (raw)</h2>
         <pre id="icrc3Attributes"></pre>
-        <h3>Canister-echoed attributes (decoded):</h3>
-        <div>
-          <label for="iiCanisterId" style="display: inline-block; width: 200px"
-            >II canister id (signer):
-          </label>
+        <h2>Canister-echoed attributes</h2>
+        <div class="row">
+          <label for="iiCanisterId">II canister id (signer)</label>
           <input
             type="text"
             id="iiCanisterId"
@@ -148,108 +433,111 @@
           />
         </div>
         <pre id="canisterEchoedAttributes"></pre>
-        <h3>Canister-echoed attributes (raw):</h3>
+        <h3>Raw</h3>
         <pre id="canisterEchoedAttributesRaw"></pre>
-        <button id="sendAttributesBtn">Send attributes to canister</button>
+        <div class="actions">
+          <button id="sendAttributesBtn">Send attributes to canister</button>
+        </div>
       </section>
 
-      <section>
-        <h1>Contact the IC</h1>
-        <label for="hostUrl" style="display: inline-block; width: 120px"
-          >Replica URL:
-        </label>
-        <input type="text" id="hostUrl" value="https://ic0.app/" />
-        <div>
-          <button id="whoamiBtn">Who Am I?</button>
-          <div id="whoamiResponse"></div>
+      <section id="card-send">
+        <h1>Notifications — send</h1>
+        <p class="hint">
+          II keeps no content and drops the notification id when it buffers, so
+          a batch of N delivers N pings whatever ids they carry. What the user
+          reads comes from the pending list.
+        </p>
+        <div class="row">
+          <label for="hostUrl">Replica URL</label>
+          <input type="text" id="hostUrl" value="https://ic0.app/" />
         </div>
-        <div>
-          <label
-            for="notificationCanisterId"
-            style="display: inline-block; width: 120px"
-            >II backend id:
-          </label>
+        <div class="row">
+          <label for="notificationCanisterId">II backend id</label>
           <input
             type="text"
             id="notificationCanisterId"
             value="u6uxm-3qaaa-aaaad-ags6a-cai"
           />
+        </div>
+        <div class="actions">
           <button id="sendNotificationBtn">Send test notification</button>
-          <div id="sendNotificationResponse"></div>
+          <button id="whoamiBtn">Who Am I?</button>
         </div>
-        <div>
-          <h3>Send a shaped batch</h3>
-          <p style="max-width: 46em">
-            II keeps no content and drops the notification id when it buffers,
-            so a batch of N delivers N pings whatever ids they carry. What the
-            user reads comes from the pending list below.
-          </p>
-          <label for="sendCount" style="display: inline-block; width: 120px"
-            >Count:</label
-          >
-          <input type="number" id="sendCount" value="1" min="1" />
-          <br />
-          <label for="sendUrgency" style="display: inline-block; width: 120px"
-            >Urgency:</label
-          >
-          <select id="sendUrgency">
-            <option value="">(default)</option>
-            <option value="low">low</option>
-            <option value="normal">normal</option>
-            <option value="high">high</option>
-          </select>
-          <br />
-          <label for="sendExpiresIn" style="display: inline-block; width: 120px"
-            >Expires in (s):</label
-          >
-          <input type="text" id="sendExpiresIn" placeholder="blank = none" />
-          <span>negative lands in the past, which II rejects as invalid</span>
-          <br />
-          <label for="sendFixedId" style="display: inline-block; width: 120px"
-            >Fixed id:</label
-          >
-          <input
-            type="text"
-            id="sendFixedId"
-            placeholder="blank = one per notification"
-          />
-          <br />
-          <button id="sendBatchBtn">Send batch</button>
+        <div id="sendNotificationResponse"></div>
+        <div id="whoamiResponse"></div>
+
+        <fieldset>
+          <legend>Shaped batch</legend>
+          <div class="row">
+            <label for="sendCount">Count</label>
+            <input type="number" id="sendCount" value="1" min="1" />
+          </div>
+          <div class="row">
+            <label for="sendUrgency">Urgency</label>
+            <select id="sendUrgency">
+              <option value="">(default)</option>
+              <option value="low">low</option>
+              <option value="normal">normal</option>
+              <option value="high">high</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="sendExpiresIn">Expires in (s)</label>
+            <input
+              type="text"
+              id="sendExpiresIn"
+              placeholder="blank = none; negative = rejected as invalid"
+            />
+          </div>
+          <div class="row">
+            <label for="sendFixedId">Fixed id</label>
+            <input
+              type="text"
+              id="sendFixedId"
+              placeholder="blank = one per notification"
+            />
+          </div>
+          <div class="actions primary">
+            <button id="sendBatchBtn">Send batch</button>
+          </div>
           <div id="sendBatchResponse"></div>
-        </div>
-        <div>
-          <h3>Pending notifications (what the service worker pulls)</h3>
-          <p style="max-width: 46em">
-            The worker renders these keyed by id, so adding the same id twice
-            replaces one notification instead of showing two, and removing an id
-            closes it on every device at the next pull.
-          </p>
-          <label for="pendingId" style="display: inline-block; width: 120px"
-            >Id:</label
-          >
+        </fieldset>
+      </section>
+
+      <section id="card-pending">
+        <h1>Notifications — pending</h1>
+        <p class="hint">
+          What the service worker pulls, rendered keyed by id: adding the same
+          id twice replaces one notification instead of showing two, and
+          removing an id closes it on every device at the next pull.
+        </p>
+        <div class="row">
+          <label for="pendingId">Id</label>
           <input type="text" id="pendingId" value="subject-1" />
-          <br />
-          <label for="pendingTitle" style="display: inline-block; width: 120px"
-            >Title:</label
-          >
+        </div>
+        <div class="row">
+          <label for="pendingTitle">Title</label>
           <input type="text" id="pendingTitle" value="A test notification" />
-          <br />
-          <label for="pendingBody" style="display: inline-block; width: 120px"
-            >Body:</label
-          >
+        </div>
+        <div class="row">
+          <label for="pendingBody">Body</label>
           <input type="text" id="pendingBody" placeholder="optional" />
-          <br />
+        </div>
+        <div class="actions primary">
           <button id="addPendingBtn">Add / replace</button>
           <button id="removePendingBtn">Remove this id</button>
           <button id="clearPendingBtn">Clear all</button>
           <button id="listPendingBtn">List pending</button>
-          <div id="pendingResponse"></div>
         </div>
-        <div>
-          <label for="newAlternativeOrigins" style="display: inline-block">
-            Set new value for /.well-known/ii-alternative-origins:
-          </label>
-          <div>
+        <div id="pendingResponse"></div>
+      </section>
+
+      <section id="card-wellknown">
+        <h1>Well-knowns</h1>
+        <h2>/.well-known/ii-alternative-origins</h2>
+        <div id="alternativeOrigins"></div>
+        <div class="radios">
+          <span>
             <input
               type="radio"
               id="certified"
@@ -258,8 +546,8 @@
               checked
             />
             <label for="certified">Certified</label>
-          </div>
-          <div>
+          </span>
+          <span>
             <input
               type="radio"
               id="uncertified"
@@ -267,8 +555,8 @@
               value="uncertified"
             />
             <label for="uncertified">Uncertified</label>
-          </div>
-          <div>
+          </span>
+          <span>
             <input
               type="radio"
               id="redirect"
@@ -276,20 +564,28 @@
               value="redirect"
             />
             <label for="redirect">Redirect</label>
-            <input
-              type="text"
-              id="redirectLocation"
-              value="/.well-known/evil-alternative-origins"
-            />
-          </div>
+          </span>
+        </div>
+        <div class="row">
+          <label for="redirectLocation">Redirect to</label>
+          <input
+            type="text"
+            id="redirectLocation"
+            value="/.well-known/evil-alternative-origins"
+          />
+        </div>
+        <div class="row stack">
+          <label for="newAlternativeOrigins">New value</label>
           <input type="text" id="newAlternativeOrigins" />
+        </div>
+        <div class="actions">
           <button id="updateNewAlternativeOrigins">Update Value</button>
         </div>
-        <div>
-          <label for="newAppMetadata" style="display: inline-block">
-            Set new value for /.well-known/ii-app-metadata:
-          </label>
-          <div>
+
+        <h2>/.well-known/ii-app-metadata</h2>
+        <div id="appMetadata"></div>
+        <div class="radios">
+          <span>
             <input
               type="radio"
               id="appMetadataCertified"
@@ -298,8 +594,8 @@
               checked
             />
             <label for="appMetadataCertified">Certified</label>
-          </div>
-          <div>
+          </span>
+          <span>
             <input
               type="radio"
               id="appMetadataRedirect"
@@ -307,36 +603,49 @@
               value="redirect"
             />
             <label for="appMetadataRedirect">Redirect</label>
-            <input
-              type="text"
-              id="appMetadataRedirectLocation"
-              value="/.well-known/evil-app-metadata"
-            />
-          </div>
+          </span>
+        </div>
+        <div class="row">
+          <label for="appMetadataRedirectLocation">Redirect to</label>
+          <input
+            type="text"
+            id="appMetadataRedirectLocation"
+            value="/.well-known/evil-app-metadata"
+          />
+        </div>
+        <div class="row stack">
+          <label for="newAppMetadata">New value</label>
           <textarea id="newAppMetadata"></textarea>
+        </div>
+        <div class="actions">
           <button id="updateNewAppMetadata">Update Value</button>
         </div>
       </section>
-      <section>
-        <h1>Protocol Tests</h1>
-        <button id="openIiWindowBtn">Open II tab</button>
-        <button id="invalidDataBtn">Send Invalid Data</button>
-        <button id="incompleteMessageBtn">Send incomplete message</button>
-        <button id="validMessageBtn">Send valid message</button>
-        <button id="closeIIWindowBtn">Close II tab</button>
-        <div>
-          <label for="customMessage" style="display: inline-block">
-            Send custom message:
-          </label>
+
+      <section id="card-protocol">
+        <h1>Protocol tests</h1>
+        <div class="actions">
+          <button id="openIiWindowBtn">Open II tab</button>
+          <button id="invalidDataBtn">Send Invalid Data</button>
+          <button id="incompleteMessageBtn">Send incomplete message</button>
+          <button id="validMessageBtn">Send valid message</button>
+          <button id="closeIIWindowBtn">Close II tab</button>
+        </div>
+        <div class="row stack">
+          <label for="customMessage">Send custom message</label>
           <input type="text" id="customMessage" />
+        </div>
+        <div class="actions">
           <button id="customMessageBtn">Send Message</button>
         </div>
-        <h3>WindowPostMessages:</h3>
+        <h2>WindowPostMessages</h2>
         <div id="messages"></div>
       </section>
+
       <section id="root-vc-flow"></section>
-      <section>
-        <h1>User Agent</h1>
+
+      <section id="card-agent">
+        <h1>User agent</h1>
         <p id="userAgent"></p>
         <p>Is telegram? <span id="isTelegram"></span></p>
       </section>
