@@ -6,19 +6,102 @@
   </head>
   <body>
     <style>
+      /* Dark is the design's own ground; light mirrors it. Both are token-only,
+         so every rule below is theme-agnostic. */
       :root {
         --bg: #0b0b0d;
         --pane: #101013;
         --sunk: #141417;
+        --code: #0e0e11;
         --line: #26262a;
+        --line2: #3f3f46;
         --hair: #1d1d21;
         --ink: #e8e8ec;
+        --strong: #ffffff;
         --dim: #a1a1a8;
         --faint: #6b6b72;
+        --ph: #55555c;
+        --sel: #1c1c20;
+        --btnhover: #191920;
+        --segbg: #17171a;
+        --segon: #26262b;
+        --swoff: #3f3f46;
+        --swknob: #a1a1aa;
+        --swon: #f4f4f5;
+        --swknobon: #18181b;
+        --gobg: #f4f4f5;
+        --gobghover: #ffffff;
+        --gofg: #101013;
+        --dotoff: #52525b;
         --accent: #8c9eff;
         --ok: #4ade80;
+        --shadow: rgba(0, 0, 0, 0.45);
+        --scrim: rgba(0, 0, 0, 0.45);
         --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
+      :root:not([data-theme="dark"]) {
+        @media (prefers-color-scheme: light) {
+          --bg: #f6f6f7;
+          --pane: #ffffff;
+          --sunk: #fbfbfc;
+          --code: #f7f7f8;
+          --line: #e2e2e5;
+          --line2: #c9c9cf;
+          --hair: #ececef;
+          --ink: #18181b;
+          --strong: #000000;
+          --dim: #52525b;
+          --faint: #8a8a93;
+          --ph: #a1a1aa;
+          --sel: #ececef;
+          --btnhover: #f2f2f4;
+          --segbg: #eeeef0;
+          --segon: #ffffff;
+          --swoff: #d4d4d8;
+          --swknob: #ffffff;
+          --swon: #18181b;
+          --swknobon: #ffffff;
+          --gobg: #18181b;
+          --gobghover: #000000;
+          --gofg: #ffffff;
+          --dotoff: #a1a1aa;
+          --accent: #4f46e5;
+          --ok: #16a34a;
+          --shadow: rgba(0, 0, 0, 0.14);
+          --scrim: rgba(0, 0, 0, 0.18);
+        }
+      }
+      :root[data-theme="light"] {
+        --bg: #f6f6f7;
+        --pane: #ffffff;
+        --sunk: #fbfbfc;
+        --code: #f7f7f8;
+        --line: #e2e2e5;
+        --line2: #c9c9cf;
+        --hair: #ececef;
+        --ink: #18181b;
+        --strong: #000000;
+        --dim: #52525b;
+        --faint: #8a8a93;
+        --ph: #a1a1aa;
+        --sel: #ececef;
+        --btnhover: #f2f2f4;
+        --segbg: #eeeef0;
+        --segon: #ffffff;
+        --swoff: #d4d4d8;
+        --swknob: #ffffff;
+        --swon: #18181b;
+        --swknobon: #ffffff;
+        --gobg: #18181b;
+        --gobghover: #000000;
+        --gofg: #ffffff;
+        --dotoff: #a1a1aa;
+        --accent: #4f46e5;
+        --ok: #16a34a;
+        --shadow: rgba(0, 0, 0, 0.14);
+        --scrim: rgba(0, 0, 0, 0.18);
+      }
+
       * {
         box-sizing: border-box;
       }
@@ -75,8 +158,8 @@
         color: var(--ink);
       }
       nav a.current {
-        background: #1c1c20;
-        color: #fff;
+        background: var(--sel);
+        color: var(--strong);
         font-weight: 500;
       }
       .badge {
@@ -177,7 +260,7 @@
       }
       input::placeholder,
       textarea::placeholder {
-        color: #55555c;
+        color: var(--ph);
       }
       input:focus,
       select:focus,
@@ -231,7 +314,7 @@
         margin: 0;
         border: 0;
         border-radius: 20px;
-        background: #3f3f46;
+        background: var(--swoff);
         cursor: pointer;
         transition: background 0.15s;
       }
@@ -243,17 +326,17 @@
         width: 20px;
         height: 20px;
         border-radius: 50%;
-        background: #a1a1aa;
+        background: var(--swknob);
         transition:
           transform 0.15s,
           background 0.15s;
       }
       input[type="checkbox"].switch:checked {
-        background: #f4f4f5;
+        background: var(--swon);
       }
       input[type="checkbox"].switch:checked::after {
         transform: translateX(18px);
-        background: #18181b;
+        background: var(--swknobon);
       }
       input[type="checkbox"].switch:focus-visible {
         outline: 2px solid var(--accent);
@@ -272,16 +355,16 @@
         cursor: pointer;
       }
       button:hover {
-        border-color: #3f3f46;
-        background: #191920;
+        border-color: var(--line2);
+        background: var(--btnhover);
       }
       button.go {
-        background: #f4f4f5;
-        border-color: #f4f4f5;
-        color: #101013;
+        background: var(--gobg);
+        border-color: var(--gobg);
+        color: var(--gofg);
       }
       button.go:hover {
-        background: #fff;
+        background: var(--gobghover);
       }
       .actions {
         display: flex;
@@ -360,17 +443,34 @@
       }
       .sessionbtn:hover {
         color: var(--ink);
-        border-color: #3f3f46;
+        border-color: var(--line2);
         background: var(--pane);
+      }
+      .themebtn {
+        right: 200px;
+      }
+      body[data-drawer="open"] .sessionbtn {
+        right: calc(20px + min(430px, 100vw));
+      }
+      body[data-drawer="open"] .themebtn {
+        right: calc(200px + min(430px, 100vw));
       }
       .dot {
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        background: #52525b;
+        background: var(--dotoff);
       }
       .sessionbtn[data-connected="true"] .dot {
         background: var(--ok);
+      }
+      /* Open pushes the page over rather than covering it: the drawer keeps its
+         own width and the grid container gives up the same room. */
+      body[data-drawer="open"] {
+        padding-right: min(430px, 100vw);
+      }
+      body {
+        transition: padding-right 0.18s ease-out;
       }
       .rail {
         position: fixed;
@@ -383,7 +483,7 @@
         padding: 22px 22px 40px;
         background: var(--pane);
         border-left: 1px solid var(--line);
-        box-shadow: -24px 0 48px rgba(0, 0, 0, 0.45);
+        box-shadow: -24px 0 48px var(--shadow);
         transform: translateX(101%);
         transition: transform 0.18s ease-out;
         pointer-events: none;
@@ -396,14 +496,10 @@
         position: fixed;
         inset: 0;
         z-index: 35;
-        background: rgba(0, 0, 0, 0.45);
+        background: var(--scrim);
         opacity: 0;
         pointer-events: none;
         transition: opacity 0.18s;
-      }
-      .scrim[data-open="true"] {
-        opacity: 1;
-        pointer-events: auto;
       }
       .railclose {
         background: none;
@@ -423,10 +519,10 @@
       .empty {
         display: none;
         font: 12.5px/1.6 var(--mono);
-        color: #55555c;
+        color: var(--ph);
         margin: 0 0 14px;
         padding: 13px;
-        background: #0e0e11;
+        background: var(--code);
         border: 1px solid var(--line);
         border-radius: 8px;
       }
@@ -477,7 +573,7 @@
         overflow-wrap: anywhere;
       }
       .shell > .ph {
-        color: #55555c;
+        color: var(--ph);
         font-family: var(--mono);
         font-size: 13px;
       }
@@ -502,7 +598,7 @@
         gap: 2px;
         padding: 3px;
         margin: 6px 0 12px;
-        background: #17171a;
+        background: var(--segbg);
         border-radius: 9px;
       }
       .segmented button {
@@ -514,8 +610,8 @@
         font-size: 13.5px;
       }
       .segmented button[aria-selected="true"] {
-        background: #26262b;
-        color: #fff;
+        background: var(--segon);
+        color: var(--strong);
       }
       .rail pre {
         font: 12.5px/1.6 var(--mono);
@@ -524,7 +620,7 @@
         margin: 0 0 14px;
         padding: 13px;
         color: var(--dim);
-        background: #0e0e11;
+        background: var(--code);
         border: 1px solid var(--line);
         border-radius: 8px;
         min-height: 44px;
@@ -979,6 +1075,9 @@
       </section>
     </main>
 
+    <button class="sessionbtn themebtn" id="themeBtn" title="Theme">
+      <span id="themeBtnText">Theme</span>
+    </button>
     <button
       class="sessionbtn"
       id="sessionBtn"

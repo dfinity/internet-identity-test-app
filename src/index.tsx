@@ -1249,6 +1249,8 @@ const sessionClose = document.getElementById("sessionClose");
 
 const setDrawer = (open: boolean) => {
   sessionRail?.setAttribute("data-open", String(open));
+  // The page gives up the drawer's width rather than being covered by it.
+  document.body.setAttribute("data-drawer", open ? "open" : "closed");
   sessionScrim?.setAttribute("data-open", String(open));
   sessionBtn?.setAttribute("aria-expanded", String(open));
   // Tab filtering starts with the first human opening, never on load, so the
@@ -1299,3 +1301,41 @@ document
       sessionRail?.setAttribute("data-tabs", tab.dataset.seg ?? "delegation");
     });
   });
+
+// Theme follows the system until someone picks one, which sticks per browser.
+const THEME_KEY = "ii-test-app-theme";
+const themeBtn = document.getElementById("themeBtn");
+const themeBtnText = document.getElementById("themeBtnText");
+const applyTheme = (theme: string | null) => {
+  if (theme === "light" || theme === "dark") {
+    document.documentElement.setAttribute("data-theme", theme);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  if (themeBtnText !== null) {
+    themeBtnText.innerText =
+      theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System";
+  }
+};
+let storedTheme: string | null = null;
+try {
+  storedTheme = localStorage.getItem(THEME_KEY);
+} catch {
+  // A private window simply forgets the preference.
+}
+applyTheme(storedTheme);
+themeBtn?.addEventListener("click", () => {
+  const next =
+    document.documentElement.getAttribute("data-theme") === "dark"
+      ? "light"
+      : document.documentElement.getAttribute("data-theme") === "light"
+        ? null
+        : "dark";
+  applyTheme(next);
+  try {
+    if (next === null) localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, next);
+  } catch {
+    // Not worth interrupting the page for.
+  }
+});
