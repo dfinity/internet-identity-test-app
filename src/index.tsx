@@ -81,6 +81,12 @@ const pendingResponseEl = document.getElementById(
 const pendingCountEl = document.getElementById(
   "pendingCount",
 ) as HTMLSpanElement;
+const notificationRecipientEl = document.getElementById(
+  "notificationRecipient",
+) as HTMLInputElement;
+const useMyPrincipalBtn = document.getElementById(
+  "useMyPrincipalBtn",
+) as HTMLButtonElement;
 const sendNotificationResponseEl = document.getElementById(
   "sendNotificationResponse",
 ) as HTMLDivElement;
@@ -292,6 +298,11 @@ const updateDelegationView = ({
   icrc3Attributes?: Icrc3Attributes;
 }) => {
   principalEl.innerText = identity.getPrincipal().toText();
+  // Default the recipient to the signed-in principal, but leave a value the
+  // tester has typed alone so a cross-user send survives a re-render.
+  if (notificationRecipientEl.value.trim() === "") {
+    notificationRecipientEl.value = identity.getPrincipal().toText();
+  }
 
   if (authnMethod !== undefined) {
     authnMethodEl.innerText = authnMethod;
@@ -820,11 +831,29 @@ sendAttributesBtn.addEventListener("click", async () => {
   }
 });
 
-sendNotificationBtn.addEventListener("click", async () => {
+// The recipient to notify: whatever principal is in the field, or the
+// signed-in one when it's blank. Throws on a malformed principal so the caller
+// surfaces it rather than sending to the wrong target.
+const recipientPrincipal = (): Principal => {
+  const typed = notificationRecipientEl.value.trim();
+  if (typed === "") {
+    if (delegationIdentity === undefined) {
+      throw new Error("Sign in, or enter a recipient principal.");
+    }
+    return delegationIdentity.getPrincipal();
+  }
+  return Principal.fromText(typed);
+};
+
+useMyPrincipalBtn.addEventListener("click", () => {
   if (delegationIdentity === undefined) {
-    showError("Sign in first — the recipient is your per-app principal.");
+    showError("Sign in first.");
     return;
   }
+  notificationRecipientEl.value = delegationIdentity.getPrincipal().toText();
+});
+
+sendNotificationBtn.addEventListener("click", async () => {
   const iiText = notificationCanisterIdEl.value.trim();
   if (iiText === "") {
     showError("Set the II backend canister id first.");
@@ -843,7 +872,7 @@ sendNotificationBtn.addEventListener("click", async () => {
     // from (must match the origin consented to and the well-known senders doc).
     const result = (await actor.send_notification(
       Principal.fromText(iiText),
-      delegationIdentity.getPrincipal(),
+      recipientPrincipal(),
       window.location.origin,
     )) as string;
     sendNotificationResponseEl.innerText = result;
@@ -872,10 +901,6 @@ const optional = <T,>(value: T | undefined): [] | [T] =>
   value === undefined ? [] : [value];
 
 sendBatchBtn.addEventListener("click", async () => {
-  if (delegationIdentity === undefined) {
-    showError("Sign in first — the recipient is your per-app principal.");
-    return;
-  }
   const iiText = notificationCanisterIdEl.value.trim();
   if (iiText === "") {
     showError("Set the II backend canister id first.");
@@ -889,7 +914,7 @@ sendBatchBtn.addEventListener("click", async () => {
     const actor = await appActor();
     const result = (await actor.send_notifications(
       Principal.fromText(iiText),
-      delegationIdentity.getPrincipal(),
+      recipientPrincipal(),
       window.location.origin,
       [
         {

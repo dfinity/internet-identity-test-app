@@ -853,6 +853,23 @@
               value="u6uxm-3qaaa-aaaad-ags6a-cai"
             />
           </div>
+          <div class="field">
+            <label for="notificationRecipient"
+              >Recipient
+              <span class="hint"
+                >the per-app principal II handed a user; blank = your own. Must
+                have consented from this origin.</span
+              ></label
+            >
+            <div class="actions">
+              <input
+                type="text"
+                id="notificationRecipient"
+                placeholder="blank = your signed-in principal"
+              />
+              <button type="button" id="useMyPrincipalBtn">Use mine</button>
+            </div>
+          </div>
         </div>
         <div class="actions">
           <button class="go" id="sendNotificationBtn">
