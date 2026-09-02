@@ -83,17 +83,15 @@
         </div>
         <div>
           <label for="useIcrc25" style="display: inline-block; width: 200px"
-            >Use ICRC-25 and sessions:</label
+            >Use ICRC-25:</label
           >
           <input type="checkbox" id="useIcrc25" checked />
         </div>
         <div>
-          <label
-            for="useIcrc3Attributes"
-            style="display: inline-block; width: 200px"
-            >Use ICRC-3 attributes:</label
+          <label for="useSession" style="display: inline-block; width: 200px"
+            >Use session:</label
           >
-          <input type="checkbox" id="useIcrc3Attributes" />
+          <input type="checkbox" id="useSession" checked />
         </div>
         <div>
           <label for="icrc3Nonce" style="display: inline-block; width: 200px"
@@ -123,7 +121,6 @@
         <h3>Expiry (ns from now):</h3>
         <div id="expiration"></div>
         <h3>Certified Attributes:</h3>
-        <pre id="certifiedAttributes"></pre>
         <h3>ICRC-3 Attributes (decoded):</h3>
         <pre id="icrc3AttributesDecoded"></pre>
         <h3>ICRC-3 Attributes (raw):</h3>

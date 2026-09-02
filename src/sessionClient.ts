@@ -52,6 +52,8 @@ export interface StorageChoice {
   iiUrl: string;
   iiCanisterId: string;
   useIcrc25: boolean;
+  /** False asks for an ICRC-34 app delegation instead of a session. */
+  useSession: boolean;
 }
 
 const DEFAULT_CHOICE: StorageChoice = {
@@ -65,6 +67,8 @@ const DEFAULT_CHOICE: StorageChoice = {
   // right before this code runs. This is what applies it from then on, so the two
   // have to agree.
   useIcrc25: true,
+  // Matches the `checked` attribute in index.html, as `useIcrc25` does.
+  useSession: true,
 };
 
 export const readStorageChoice = (): StorageChoice => {
@@ -319,6 +323,7 @@ export const mountSessionPanel = (options: {
     iiUrl: control("iiUrl")?.value.trim() ?? "",
     iiCanisterId: control("iiCanisterId")?.value.trim() ?? "",
     useIcrc25: control("useIcrc25")?.checked === true,
+    useSession: control("useSession")?.checked === true,
   });
 
   const stored = readStorageChoice();
@@ -526,9 +531,11 @@ export const mountSessionPanel = (options: {
 
   // Persisted but not rebuilt on: the toggle selects which sign-in path the page
   // takes, which the client is not built from.
-  document.getElementById("useIcrc25")?.addEventListener("change", () => {
-    writeStorageChoice(choiceFromControls());
-  });
+  for (const id of ["useIcrc25", "useSession"]) {
+    document.getElementById(id)?.addEventListener("change", () => {
+      writeStorageChoice(choiceFromControls());
+    });
+  }
 
   for (const id of [
     "iiUrl",

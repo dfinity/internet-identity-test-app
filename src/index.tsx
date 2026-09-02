@@ -15,12 +15,7 @@ import ReactDOM from "react-dom/client";
 
 import { decodeJwt } from "jose";
 
-import {
-  authWithII,
-  CertifiedAttribute,
-  extractDelegation,
-  Icrc3Attributes,
-} from "./auth";
+import { authWithII, extractDelegation, Icrc3Attributes } from "./auth";
 import { formatIcrc3Attributes } from "./icrc3";
 import {
   mountSessionPanel,
@@ -85,9 +80,6 @@ const authnMethodEl = document.querySelector(
   '[data-role="authn-method"]',
 ) as HTMLDivElement;
 const delegationEl = document.getElementById("delegation") as HTMLPreElement;
-const certifiedAttributesEl = document.getElementById(
-  "certifiedAttributes",
-) as HTMLPreElement;
 const expirationEl = document.getElementById("expiration") as HTMLDivElement;
 const iiUrlEl = document.getElementById("iiUrl") as HTMLInputElement;
 const maxTimeToLiveEl = document.getElementById(
@@ -103,10 +95,8 @@ const allowPinAuthenticationEl = document.getElementById(
   "allowPinAuthentication",
 ) as HTMLInputElement;
 const useIcrc25El = document.getElementById("useIcrc25") as HTMLInputElement;
+const useSessionEl = document.getElementById("useSession") as HTMLInputElement;
 const transportEl = document.getElementById("transport") as HTMLSelectElement;
-const useIcrc3AttributesEl = document.getElementById(
-  "useIcrc3Attributes",
-) as HTMLInputElement;
 const icrc3NonceEl = document.getElementById("icrc3Nonce") as HTMLInputElement;
 const requestAttributesEl = document.getElementById(
   "requestAttributes",
@@ -197,12 +187,10 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
 const updateDelegationView = ({
   authnMethod,
   identity,
-  certifiedAttributes,
   icrc3Attributes,
 }: {
   authnMethod?: string;
   identity: Identity;
-  certifiedAttributes?: Record<string, CertifiedAttribute>;
   icrc3Attributes?: Icrc3Attributes;
 }) => {
   principalEl.innerText = identity.getPrincipal().toText();
@@ -256,18 +244,6 @@ const updateDelegationView = ({
     ).toString();
 
     // Display certified attributes if available.
-    if (certifiedAttributes !== undefined) {
-      certifiedAttributesEl.innerText = Object.entries(certifiedAttributes)
-        .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-        .map(([key, { value }]) => `${key}: ${new TextDecoder().decode(value)}`)
-        .join("\n");
-    } else {
-      certifiedAttributesEl.innerText = "";
-    }
-
-    // Display ICRC-3 attributes if available, and stash the bundle so
-    // the canister round-trip button can consume it.
-    latestIcrc3Attributes = icrc3Attributes;
     canisterEchoedAttributesEl.innerText = "";
     if (icrc3Attributes !== undefined) {
       icrc3AttributesEl.innerText = JSON.stringify({
@@ -528,6 +504,15 @@ const init = async () => {
     // ICRC-167 flow on load and returns the results here (see below). Nothing
     // else on this page runs — the tab navigates away.
     if (transportEl.value === "redirect") {
+      // The callback page signs in through AuthClient, which is session-based;
+      // the ICRC-34 path needs a postMessage channel of its own. Saying so beats
+      // handing back a session the box asked not to have.
+      if (!useSessionEl.checked) {
+        showError(
+          "The redirect transport signs in through a session. Uncheck it only with the window transport, which is where the ICRC-34 path runs.",
+        );
+        return;
+      }
       // Hand the whole form to the callback, which derives the flow inputs from
       // it. Nothing else on this page runs — the tab navigates away.
       window.location.assign(
@@ -576,7 +561,7 @@ const init = async () => {
         sessionIdentity: getLocalIdentity(),
         autoSelectionPrincipal,
         useIcrc25: useIcrc25El.checked,
-        useIcrc3Attributes: useIcrc3AttributesEl.checked,
+        useSession: useSessionEl.checked,
         icrc3Nonce:
           icrc3NonceEl.value.trim() !== ""
             ? // @ts-ignore Not known in TS types yet but supported in all browsers
@@ -599,11 +584,10 @@ const init = async () => {
       updateDelegationView({
         identity: delegationIdentity,
         authnMethod: result.authnMethod,
-        certifiedAttributes: result.certifiedAttributes,
         icrc3Attributes: result.icrc3Attributes,
       });
     } catch (e) {
-      showError(JSON.stringify(e));
+      showError(describeError(e));
     }
   };
 
@@ -842,6 +826,19 @@ const currentIdentity = async (): Promise<Identity | undefined> => {
 
 const showError = (err: string) => {
   alert(err);
+};
+
+/// `JSON.stringify` renders an Error as `{}`, so a real failure used to read as
+/// no failure at all. Name the error, and keep whatever a non-Error carries.
+const describeError = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.stack ?? `${error.name}: ${error.message}`;
+  }
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
 };
 
 /* The various kinds of specs the issuer canister can issue */

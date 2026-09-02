@@ -58,7 +58,9 @@ export const inputsFromSnapshot = (form: FormSnapshot): RedirectInputs => {
         : undefined,
     derivationOrigin: derivationOrigin !== "" ? derivationOrigin : undefined,
     maxTimeToLive: maxTtl > BigInt(0) ? maxTtl.toString() : undefined,
-    requestAttributes: form.useIcrc3Attributes === true,
+    // Attributes are requested when keys are given: there is one attribute
+    // protocol now, so there is nothing to opt into.
+    requestAttributes: text(form, "requestAttributes").trim() !== "",
     attributeKeys: text(form, "requestAttributes")
       .split("\n")
       .map((s) => s.trim())

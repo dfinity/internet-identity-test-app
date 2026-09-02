@@ -25,12 +25,6 @@ interface AuthResponseSuccess {
   authnMethod: "pin" | "passkey" | "recovery";
 }
 
-export interface CertifiedAttribute {
-  value: Uint8Array;
-  signature: Uint8Array;
-  expiration: bigint;
-}
-
 export interface Icrc3Attributes {
   data: Uint8Array;
   signature: Uint8Array;
@@ -47,8 +41,8 @@ export const authWithII = async ({
   authClient,
   autoSelectionPrincipal,
   useIcrc25,
+  useSession,
   requestAttributes,
-  useIcrc3Attributes,
   icrc3Nonce,
 }: {
   url: string;
@@ -62,57 +56,56 @@ export const authWithII = async ({
   /** The page's client, which owns the session and its storage. */
   authClient: AuthClient;
   useIcrc25?: boolean;
+  /**
+   * Whether to ask for a session, or for a plain app delegation.
+   *
+   * `ii_session_delegation` returns a chain the client mints short-lived app
+   * delegations from, so the identity replaces its own credential as it ages.
+   * `icrc34_delegation` returns the app delegation directly — the same kind of
+   * identity, without the inner minting — and it expires when it expires.
+   */
+  useSession?: boolean;
   requestAttributes?: string[];
-  useIcrc3Attributes?: boolean;
   icrc3Nonce?: Uint8Array;
 }): Promise<{
   identity: DelegationIdentity;
   authnMethod: string;
-  certifiedAttributes?: Record<string, CertifiedAttribute>;
   icrc3Attributes?: Icrc3Attributes;
 }> => {
   // Authenticate via the ICRC-25 protocol
   if (useIcrc25) {
-    const hasAttributes =
-      requestAttributes !== undefined && requestAttributes.length > 0;
-
-    // Legacy (non-ICRC-3) attributes are not supported by AuthClient.
-    // For that case we use @icp-sdk/signer directly to share a single
-    // channel between the ICRC-34 delegation request and the
-    // `ii_attributes` request.
-    if (hasAttributes && !useIcrc3Attributes) {
+    if (useSession === false) {
+      // ICRC-34: one delegation for the app's own key, and nothing after it.
+      // Attributes are not requested here — II answers `ii_attributes` only for
+      // a 1-click OpenID sign-in at a dapp allow-listed for certified
+      // attributes, and stays silent otherwise, which would hang this call.
       const transport = new PostMessageTransport({ url: url_ });
-      const signer = new Signer({
-        transport,
-        derivationOrigin,
-        autoCloseTransportChannel: false,
-      });
+      const signer = new Signer({ transport, derivationOrigin });
       try {
-        const [delegationChain, certifiedAttributes] = await Promise.all([
-          signer.requestDelegation({
-            publicKey: sessionIdentity.getPublicKey(),
-            maxTimeToLive,
-          }),
-          fetchLegacyAttributes(signer, requestAttributes),
-        ]);
+        const delegationChain = await signer.requestDelegation({
+          publicKey: sessionIdentity.getPublicKey(),
+          maxTimeToLive,
+        });
         return {
           identity: DelegationIdentity.fromDelegation(
             sessionIdentity,
             delegationChain,
           ),
           authnMethod: "passkey",
-          certifiedAttributes,
         };
       } finally {
         await signer.closeChannel();
       }
     }
 
+    const hasAttributes =
+      requestAttributes !== undefined && requestAttributes.length > 0;
+
     const nonce = icrc3Nonce ?? crypto.getRandomValues(new Uint8Array(32));
 
     const [identity, icrc3Attributes] = await Promise.all([
       authClient.signIn({ maxTimeToLive, maxTimeToIdle }),
-      hasAttributes && useIcrc3Attributes
+      hasAttributes
         ? authClient.requestAttributes({
             keys: requestAttributes,
             nonce: () => Promise.resolve(nonce),
@@ -202,54 +195,6 @@ export const authWithII = async ({
   });
 
   return { identity, authnMethod: message.authnMethod };
-};
-
-const fetchLegacyAttributes = async (
-  signer: Signer,
-  attributes: string[],
-): Promise<Record<string, CertifiedAttribute>> => {
-  const response = await signer.sendRequest({
-    jsonrpc: "2.0",
-    method: "ii_attributes",
-    id: window.crypto.randomUUID(),
-    params: { attributes },
-  });
-  if (
-    !("result" in response) ||
-    typeof response.result !== "object" ||
-    response.result === null ||
-    !("attributes" in response.result) ||
-    typeof response.result.attributes !== "object" ||
-    response.result.attributes === null
-  ) {
-    throw new Error("Attributes response is missing result");
-  }
-  const entries: [string, CertifiedAttribute][] = [];
-  for (const [key, raw] of Object.entries(response.result.attributes)) {
-    if (
-      typeof raw !== "object" ||
-      raw === null ||
-      !("value" in raw) ||
-      typeof raw.value !== "string" ||
-      !("signature" in raw) ||
-      typeof raw.signature !== "string" ||
-      !("expiration" in raw) ||
-      (typeof raw.expiration !== "string" && typeof raw.expiration !== "number")
-    ) {
-      throw new Error(`Invalid attribute entry for key '${key}'`);
-    }
-    entries.push([
-      key,
-      {
-        // @ts-ignore Not known in TS types yet but supported in all browsers
-        value: Uint8Array.fromBase64(raw.value),
-        // @ts-ignore Not known in TS types yet but supported in all browsers
-        signature: Uint8Array.fromBase64(raw.signature),
-        expiration: BigInt(raw.expiration),
-      },
-    ]);
-  }
-  return Object.fromEntries(entries);
 };
 
 // Read delegations the delegations from the response
