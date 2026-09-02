@@ -174,33 +174,35 @@
           <label style="display: inline-block; width: 200px"
             >State storage:</label
           >
-          <label
-            ><input
-              type="radio"
-              name="stateStorageChoice"
-              id="stateStorageLocal"
-            />localStorage</label
-          >
-          <label
-            ><input
-              type="radio"
-              name="stateStorageChoice"
-              id="stateStorageCookie"
-            />cookie (shared with siblings)</label
-          >
-          <label
-            ><input
-              type="radio"
-              name="stateStorageChoice"
-              id="stateStorageMemory"
-            />memory</label
-          >
+          <span class="options">
+            <label
+              ><input
+                type="radio"
+                name="stateStorageChoice"
+                id="stateStorageLocal"
+              />localStorage</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="stateStorageChoice"
+                id="stateStorageCookie"
+              />cookie (shared with siblings)</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="stateStorageChoice"
+                id="stateStorageMemory"
+              />memory</label
+            >
+          </span>
         </div>
         <div>
           <label
             for="sessionCookieDomain"
             style="display: inline-block; width: 200px"
-            >Hint cookie domain:</label
+            >Cookie domain:</label
           >
           <input
             type="text"
@@ -212,55 +214,62 @@
           <label style="display: inline-block; width: 200px"
             >Credential storage:</label
           >
-          <label
-            ><input
-              type="radio"
-              name="credentialStorageChoice"
-              id="credentialStorageIdb"
-            />IndexedDB</label
-          >
-          <label
-            ><input
-              type="radio"
-              name="credentialStorageChoice"
-              id="credentialStorageLocal"
-            />localStorage</label
-          >
-          <label
-            ><input
-              type="radio"
-              name="credentialStorageChoice"
-              id="credentialStorageMemory"
-            />memory</label
-          >
-          <label
-            ><input
-              type="radio"
-              name="credentialStorageChoice"
-              id="credentialStorageShared"
-            />shared memory (across tabs)</label
-          >
+          <span class="options">
+            <label
+              ><input
+                type="radio"
+                name="credentialStorageChoice"
+                id="credentialStorageIdb"
+              />IndexedDB</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="credentialStorageChoice"
+                id="credentialStorageLocal"
+              />localStorage</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="credentialStorageChoice"
+                id="credentialStorageMemory"
+              />memory</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="credentialStorageChoice"
+                id="credentialStorageShared"
+              />shared memory (across tabs)</label
+            >
+          </span>
         </div>
         <div>
           <label style="display: inline-block; width: 200px">Resumable:</label>
-          <label
-            ><input
-              type="radio"
-              name="resumableChoice"
-              id="resumableDefault"
-            />whatever the store says</label
-          >
-          <label
-            ><input type="radio" name="resumableChoice" id="resumableOn" />force
-            on</label
-          >
-          <label
-            ><input
-              type="radio"
-              name="resumableChoice"
-              id="resumableOff"
-            />force off</label
-          >
+          <span class="options">
+            <label
+              ><input
+                type="radio"
+                name="resumableChoice"
+                id="resumableDefault"
+              />whatever the store says</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="resumableChoice"
+                id="resumableOn"
+              />force on</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="resumableChoice"
+                id="resumableOff"
+              />force off</label
+            >
+          </span>
         </div>
         <div>
           <label
