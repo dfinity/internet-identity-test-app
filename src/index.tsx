@@ -15,14 +15,13 @@ import ReactDOM from "react-dom/client";
 
 import { decodeJwt } from "jose";
 
-import {
-  authWithII,
-  CertifiedAttribute,
-  extractDelegation,
-  Icrc3Attributes,
-} from "./auth";
+import { authWithII, extractDelegation, Icrc3Attributes } from "./auth";
 import { formatIcrc3Attributes } from "./icrc3";
-import { AuthClient } from "@icp-sdk/auth/client";
+import {
+  mountSessionPanel,
+  readStorageChoice,
+  type SessionClientHandle,
+} from "./sessionClient";
 import {
   CALLBACK_PATH,
   decodeResults,
@@ -81,9 +80,6 @@ const authnMethodEl = document.querySelector(
   '[data-role="authn-method"]',
 ) as HTMLDivElement;
 const delegationEl = document.getElementById("delegation") as HTMLPreElement;
-const certifiedAttributesEl = document.getElementById(
-  "certifiedAttributes",
-) as HTMLPreElement;
 const expirationEl = document.getElementById("expiration") as HTMLDivElement;
 const iiUrlEl = document.getElementById("iiUrl") as HTMLInputElement;
 const maxTimeToLiveEl = document.getElementById(
@@ -99,10 +95,8 @@ const allowPinAuthenticationEl = document.getElementById(
   "allowPinAuthentication",
 ) as HTMLInputElement;
 const useIcrc25El = document.getElementById("useIcrc25") as HTMLInputElement;
+const useSessionEl = document.getElementById("useSession") as HTMLInputElement;
 const transportEl = document.getElementById("transport") as HTMLSelectElement;
-const useIcrc3AttributesEl = document.getElementById(
-  "useIcrc3Attributes",
-) as HTMLInputElement;
 const icrc3NonceEl = document.getElementById("icrc3Nonce") as HTMLInputElement;
 const requestAttributesEl = document.getElementById(
   "requestAttributes",
@@ -130,6 +124,11 @@ let iiProtocolTestWindow: Window | undefined;
 
 // The identity set by the authentication
 let delegationIdentity: DelegationIdentity | undefined = undefined;
+let sessionHandle: SessionClientHandle | undefined = undefined;
+// Whether the identity this page holds came from the legacy protocol path, which
+// creates no session. Anything else leaves the session as the record of being
+// signed in, so a leftover identity here means nothing once it is gone.
+let legacySignIn = false;
 
 // The most recently received ICRC-3 attribute bundle, kept around so the
 // "Send attributes to canister" button can wrap the delegation identity in
@@ -188,12 +187,10 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
 const updateDelegationView = ({
   authnMethod,
   identity,
-  certifiedAttributes,
   icrc3Attributes,
 }: {
   authnMethod?: string;
   identity: Identity;
-  certifiedAttributes?: Record<string, CertifiedAttribute>;
   icrc3Attributes?: Icrc3Attributes;
 }) => {
   principalEl.innerText = identity.getPrincipal().toText();
@@ -247,18 +244,6 @@ const updateDelegationView = ({
     ).toString();
 
     // Display certified attributes if available.
-    if (certifiedAttributes !== undefined) {
-      certifiedAttributesEl.innerText = Object.entries(certifiedAttributes)
-        .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-        .map(([key, { value }]) => `${key}: ${new TextDecoder().decode(value)}`)
-        .join("\n");
-    } else {
-      certifiedAttributesEl.innerText = "";
-    }
-
-    // Display ICRC-3 attributes if available, and stash the bundle so
-    // the canister round-trip button can consume it.
-    latestIcrc3Attributes = icrc3Attributes;
     canisterEchoedAttributesEl.innerText = "";
     if (icrc3Attributes !== undefined) {
       icrc3AttributesEl.innerText = JSON.stringify({
@@ -428,10 +413,17 @@ const restoreForm = (form: FormSnapshot): void => {
 // On the return leg of a redirect sign-in, the callback page hands results back
 // in the hash. Recover the identity from the persisted session (as any redirect
 // relying party would) and render, reusing the same view as the window flow.
-const renderRedirectResultIfPresent = async () => {
+/**
+ * Restores the form from a redirect return, and reports what still needs the
+ * session client. The identity is read separately because the client is built
+ * from the form this restores, so it does not exist yet.
+ */
+const restoreRedirectResultIfPresent = ():
+  | { attributes?: { data: string; signature: string } }
+  | undefined => {
   const results = decodeResults(window.location.hash);
   if (results === undefined) {
-    return;
+    return undefined;
   }
   // Drop the hash so a reload doesn't re-render stale results.
   window.history.replaceState(
@@ -446,10 +438,16 @@ const renderRedirectResultIfPresent = async () => {
   }
   if (results.error !== undefined) {
     showError(results.error);
-    return;
+    return undefined;
   }
-  const authClient = new AuthClient({ idleOptions: { disableIdle: true } });
-  const identity = await authClient.getIdentity();
+  return { attributes: results.attributes };
+};
+
+const renderRedirectIdentity = async (
+  handle: SessionClientHandle,
+  results: { attributes?: { data: string; signature: string } },
+) => {
+  const identity = await handle.client.getIdentity();
   if (identity instanceof DelegationIdentity) {
     delegationIdentity = identity;
   }
@@ -466,7 +464,35 @@ const renderRedirectResultIfPresent = async () => {
 };
 
 const init = async () => {
-  await renderRedirectResultIfPresent();
+  // The form is restored first: the session client is built from it, and a
+  // redirect return carries the values the outbound load was configured with.
+  const redirect = restoreRedirectResultIfPresent();
+
+  // The panel owns the client, and rebuilds it when anything it is built from
+  // changes, so the page reads the current one from here rather than holding one.
+  const { log } = mountSessionPanel({
+    readProvider: () => ({
+      authorizeUrl: iiUrlEl.value,
+      canisterId: iiCanisterIdEl.value.trim(),
+      derivationOrigin:
+        derivationOriginEl.value !== "" ? derivationOriginEl.value : undefined,
+      // The host field is what the rest of this page calls, and off mainnet the
+      // root key has to be fetched or every certificate fails verification.
+      agentOptions: {
+        host: hostUrlEl.value !== "" ? hostUrlEl.value : undefined,
+        shouldFetchRootKey: true,
+      },
+    }),
+    onClient: (handle) => {
+      sessionHandle = handle;
+    },
+    appIdentity: () => (legacySignIn ? delegationIdentity : undefined),
+  });
+  log("page loaded, session client built");
+  if (redirect !== undefined && sessionHandle !== undefined) {
+    await renderRedirectIdentity(sessionHandle, redirect);
+  }
+
   const userAgentElement = document.getElementById("userAgent") as HTMLElement;
   userAgentElement.innerText = navigator.userAgent;
   const isTelegramElement = document.getElementById(
@@ -478,6 +504,15 @@ const init = async () => {
     // ICRC-167 flow on load and returns the results here (see below). Nothing
     // else on this page runs — the tab navigates away.
     if (transportEl.value === "redirect") {
+      // The callback page signs in through AuthClient, which is session-based;
+      // the ICRC-34 path needs a postMessage channel of its own. Saying so beats
+      // handing back a session the box asked not to have.
+      if (!useSessionEl.checked) {
+        showError(
+          "The redirect transport signs in through a session. Uncheck it only with the window transport, which is where the ICRC-34 path runs.",
+        );
+        return;
+      }
       // Hand the whole form to the callback, which derives the flow inputs from
       // it. Nothing else on this page runs — the tab navigates away.
       window.location.assign(
@@ -492,6 +527,13 @@ const init = async () => {
       /* hours */ BigInt(8) * /* nanoseconds */ BigInt(3_600_000_000_000);
     const maxTimeToLive =
       maxTimeToLive_ > BigInt(0) ? maxTimeToLive_ : authClientDefaultMaxTTL;
+    // The panel owns this one, since it is a property of the session rather than
+    // of this form. Blank leaves the provider's own default.
+    const maxIdleMinutes = Number(readStorageChoice().maxIdleMinutes);
+    const maxTimeToIdle =
+      Number.isFinite(maxIdleMinutes) && maxIdleMinutes > 0
+        ? BigInt(Math.floor(maxIdleMinutes)) * BigInt(60_000_000_000)
+        : undefined;
     const derivationOrigin =
       derivationOriginEl.value !== "" ? derivationOriginEl.value : undefined;
     const autoSelectionPrincipal =
@@ -504,15 +546,22 @@ const init = async () => {
       : false;
 
     try {
+      if (sessionHandle === undefined) {
+        showError("the session client is not ready");
+        return;
+      }
+      legacySignIn = !useIcrc25El.checked;
       const result = await authWithII({
         url: iiUrlEl.value,
+        authClient: sessionHandle.client,
         maxTimeToLive,
+        maxTimeToIdle,
         derivationOrigin,
         allowPinAuthentication,
         sessionIdentity: getLocalIdentity(),
         autoSelectionPrincipal,
         useIcrc25: useIcrc25El.checked,
-        useIcrc3Attributes: useIcrc3AttributesEl.checked,
+        useSession: useSessionEl.checked,
         icrc3Nonce:
           icrc3NonceEl.value.trim() !== ""
             ? // @ts-ignore Not known in TS types yet but supported in all browsers
@@ -524,14 +573,21 @@ const init = async () => {
           .filter((s) => s.length > 0),
       });
       delegationIdentity = result.identity;
+      // `signIn` mints, but the identity can be replaced straight after by a
+      // reconcile that holds nothing, and the only other trigger is the page
+      // coming back to the foreground. Ask for one now instead.
+      const settled = await sessionHandle.client.getIdentity();
+      const mintable = settled as { refresh?: () => Promise<void> };
+      if (typeof mintable.refresh === "function") {
+        await mintable.refresh().catch(() => undefined);
+      }
       updateDelegationView({
         identity: delegationIdentity,
         authnMethod: result.authnMethod,
-        certifiedAttributes: result.certifiedAttributes,
         icrc3Attributes: result.icrc3Attributes,
       });
     } catch (e) {
-      showError(JSON.stringify(e));
+      showError(describeError(e));
     }
   };
 
@@ -685,8 +741,13 @@ sendAttributesBtn.addEventListener("click", async () => {
   }
 
   const canisterId = Principal.fromText(readCanisterId());
+  const inner = await currentIdentity();
+  if (inner === undefined) {
+    showError("Sign in first");
+    return;
+  }
   const identity = new AttributesIdentity({
-    inner: delegationIdentity,
+    inner,
     attributes: latestIcrc3Attributes,
     signer: { canisterId: Principal.fromText(iiCanisterIdText) },
   });
@@ -728,7 +789,7 @@ whoamiBtn.addEventListener("click", async () => {
   const canisterId = Principal.fromText(readCanisterId());
   const agent = await HttpAgent.create({
     host: hostUrlEl.value,
-    identity: delegationIdentity,
+    identity: await currentIdentity(),
     shouldFetchRootKey: true,
   });
   const actor = Actor.createActor(idlFactory, {
@@ -748,8 +809,36 @@ whoamiBtn.addEventListener("click", async () => {
     });
 });
 
+/**
+ * The identity to make calls with. `delegationIdentity` is only set by a sign-in
+ * that happened in this tab, so a second tab of the origin would otherwise call
+ * anonymously despite holding the session.
+ */
+const currentIdentity = async (): Promise<Identity | undefined> => {
+  if (sessionHandle !== undefined) {
+    const fromClient = await sessionHandle.client.getIdentity();
+    if (!fromClient.getPrincipal().isAnonymous()) {
+      return fromClient;
+    }
+  }
+  return legacySignIn ? delegationIdentity : undefined;
+};
+
 const showError = (err: string) => {
   alert(err);
+};
+
+/// `JSON.stringify` renders an Error as `{}`, so a real failure used to read as
+/// no failure at all. Name the error, and keep whatever a non-Error carries.
+const describeError = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.stack ?? `${error.name}: ${error.message}`;
+  }
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
 };
 
 /* The various kinds of specs the issuer canister can issue */

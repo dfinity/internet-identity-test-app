@@ -25,6 +25,8 @@ export type FormSnapshot = Record<string, string | boolean>;
 export interface RedirectInputs {
   /** Identity provider (II) URL. */
   iiUrl: string;
+  /** The II canister id, which app delegations are minted from. */
+  iiCanisterId?: string;
   /** Optional derivation origin. */
   derivationOrigin?: string;
   /** Max delegation lifetime in nanoseconds, as a decimal string. */
@@ -50,9 +52,15 @@ export const inputsFromSnapshot = (form: FormSnapshot): RedirectInputs => {
   const nonce = text(form, "icrc3Nonce").trim();
   return {
     iiUrl: text(form, "iiUrl"),
+    iiCanisterId:
+      text(form, "iiCanisterId") !== ""
+        ? text(form, "iiCanisterId")
+        : undefined,
     derivationOrigin: derivationOrigin !== "" ? derivationOrigin : undefined,
     maxTimeToLive: maxTtl > BigInt(0) ? maxTtl.toString() : undefined,
-    requestAttributes: form.useIcrc3Attributes === true,
+    // Attributes are requested when keys are given: there is one attribute
+    // protocol now, so there is nothing to opt into.
+    requestAttributes: text(form, "requestAttributes").trim() !== "",
     attributeKeys: text(form, "requestAttributes")
       .split("\n")
       .map((s) => s.trim())

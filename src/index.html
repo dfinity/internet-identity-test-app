@@ -83,17 +83,15 @@
         </div>
         <div>
           <label for="useIcrc25" style="display: inline-block; width: 200px"
-            >Use ICRC-25 protocol:</label
+            >Use ICRC-25:</label
           >
-          <input type="checkbox" id="useIcrc25" />
+          <input type="checkbox" id="useIcrc25" checked />
         </div>
         <div>
-          <label
-            for="useIcrc3Attributes"
-            style="display: inline-block; width: 200px"
-            >Use ICRC-3 attributes:</label
+          <label for="useSession" style="display: inline-block; width: 200px"
+            >Use session:</label
           >
-          <input type="checkbox" id="useIcrc3Attributes" />
+          <input type="checkbox" id="useSession" checked />
         </div>
         <div>
           <label for="icrc3Nonce" style="display: inline-block; width: 200px"
@@ -123,7 +121,6 @@
         <h3>Expiry (ns from now):</h3>
         <div id="expiration"></div>
         <h3>Certified Attributes:</h3>
-        <pre id="certifiedAttributes"></pre>
         <h3>ICRC-3 Attributes (decoded):</h3>
         <pre id="icrc3AttributesDecoded"></pre>
         <h3>ICRC-3 Attributes (raw):</h3>
@@ -131,7 +128,7 @@
         <h3>Canister-echoed attributes (decoded):</h3>
         <div>
           <label for="iiCanisterId" style="display: inline-block; width: 200px"
-            >II canister id (signer):
+            >II canister id:
           </label>
           <input
             type="text"
@@ -143,6 +140,148 @@
         <h3>Canister-echoed attributes (raw):</h3>
         <pre id="canisterEchoedAttributesRaw"></pre>
         <button id="sendAttributesBtn">Send attributes to canister</button>
+      </section>
+
+      <section>
+        <h2>Session</h2>
+        <h3>State:</h3>
+        <div id="sessionState">-</div>
+        <h3>Account principal (what an app's canisters see):</h3>
+        <div data-role="account-principal" id="sessionAccountPrincipal">-</div>
+        <h3>Session expires in:</h3>
+        <div id="sessionExpiry">-</div>
+        <h3>App delegation expires in:</h3>
+        <div id="delegationExpiry">-</div>
+        <h3>Delegation replacements observed:</h3>
+        <div id="delegationChanges">0</div>
+        <h3>The stored state record (what a sibling origin reads):</h3>
+        <div id="sessionHint">none</div>
+        <h3>Resumable (may the provider keep this sign-in?):</h3>
+        <div id="sessionResumable">-</div>
+        <div>
+          <button id="sessionSignOutBtn">
+            Sign out (ends it at the canister)
+          </button>
+          <button id="sessionRefreshBtn">Refresh now</button>
+          <button id="sessionOpenTabBtn">Open a second tab</button>
+          <button id="sessionSilentBtn">Silent re-auth (prompt=none)</button>
+        </div>
+        <h3>Storage</h3>
+        <div>
+          <label style="display: inline-block; width: 200px"
+            >State storage:</label
+          >
+          <span class="options">
+            <label
+              ><input
+                type="radio"
+                name="stateStorageChoice"
+                id="stateStorageLocal"
+              />localStorage</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="stateStorageChoice"
+                id="stateStorageCookie"
+              />cookie (shared with siblings)</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="stateStorageChoice"
+                id="stateStorageMemory"
+              />memory</label
+            >
+          </span>
+        </div>
+        <div>
+          <label
+            for="sessionCookieDomain"
+            style="display: inline-block; width: 200px"
+            >Cookie domain:</label
+          >
+          <input
+            type="text"
+            id="sessionCookieDomain"
+            placeholder="e.g. example.com (this host or one above it)"
+          />
+        </div>
+        <div>
+          <label style="display: inline-block; width: 200px"
+            >Credential storage:</label
+          >
+          <span class="options">
+            <label
+              ><input
+                type="radio"
+                name="credentialStorageChoice"
+                id="credentialStorageIdb"
+              />IndexedDB</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="credentialStorageChoice"
+                id="credentialStorageLocal"
+              />localStorage</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="credentialStorageChoice"
+                id="credentialStorageMemory"
+              />memory</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="credentialStorageChoice"
+                id="credentialStorageShared"
+              />shared memory (across tabs)</label
+            >
+          </span>
+        </div>
+        <div>
+          <label style="display: inline-block; width: 200px">Resumable:</label>
+          <span class="options">
+            <label
+              ><input
+                type="radio"
+                name="resumableChoice"
+                id="resumableDefault"
+              />whatever the store says</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="resumableChoice"
+                id="resumableOn"
+              />force on</label
+            >
+            <label
+              ><input
+                type="radio"
+                name="resumableChoice"
+                id="resumableOff"
+              />force off</label
+            >
+          </span>
+        </div>
+        <div>
+          <label
+            for="sessionMaxIdle"
+            style="display: inline-block; width: 200px"
+            >Max idle (minutes):</label
+          >
+          <input
+            type="text"
+            id="sessionMaxIdle"
+            placeholder="blank = the provider's default, currently 7 days"
+          />
+        </div>
+        <h3>Log:</h3>
+        <pre id="sessionLog"></pre>
       </section>
 
       <section>

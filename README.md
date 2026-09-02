@@ -116,8 +116,22 @@ release with these assets:
 | `<asset>.sha256`       | `sha256sum` output for each asset above, verified by II's `scripts/fetch-test-app`.           |
 
 ```bash
-git tag release-1.2.3
-git push origin release-1.2.3
+git tag release-2026-08-25
+git push origin release-2026-08-25
+```
+
+### Pre-releases
+
+A `prerelease-<year>-<month>-<day>` tag publishes the same assets, marked as a
+GitHub pre-release. Use it when the app needs an Internet Identity that is not
+released yet: the scheduled bump workflow described below finds new versions
+through `/releases/latest`, which is by definition the latest release that is
+_not_ a pre-release, so a pre-release can be pinned by hand on an II branch
+without moving II's `main` onto it.
+
+```bash
+git tag prerelease-2026-08-25
+git push origin prerelease-2026-08-25
 ```
 
 Internet Identity consumes releases through a pinned tag in
