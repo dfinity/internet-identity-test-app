@@ -3,14 +3,16 @@ import type { DelegationChain } from "@icp-sdk/core/identity";
 import { Principal } from "@icp-sdk/core/principal";
 import {
   AuthClient,
-  CookieSessionStorage,
-  IdbIdentityStorage,
-  LocalIdentityStorage,
-  LocalSessionStorage,
+  CookieStateStorage,
+  IdbCredentialStorage,
+  LocalCredentialStorage,
+  LocalStateStorage,
+  MemoryCredentialStorage,
+  MemoryStateStorage,
   SessionGoneError,
-  type IdentityStorage,
-  type Session,
-  type SessionStorage,
+  SharedMemoryCredentialStorage,
+  type CredentialStorage,
+  type StateStorage,
 } from "@icp-sdk/auth/client";
 
 /**
@@ -25,9 +27,22 @@ import {
 const STORAGE_CHOICE_KEY = "test-app-storage-choice";
 
 export interface StorageChoice {
-  session: "local" | "cookie";
-  identity: "idb" | "local";
+  /** Where the two public facts about the sign-in live. Read synchronously. */
+  state: "local" | "cookie" | "memory";
+  /** Where the key and its delegation live, as one credential per slot. */
+  credential: "idb" | "local" | "memory" | "shared-memory";
   cookieDomain: string;
+  /**
+   * Overrides what the state store says about being resumable, so a
+   * cross-origin arrangement can opt in and siblings can opt out. Unset leaves
+   * the store's own answer, which is only true for the cookie.
+   */
+  resumable?: boolean;
+  /**
+   * Minutes a session may go unminted before the provider ends it. Blank leaves
+   * the provider's own default, currently seven days.
+   */
+  maxIdleMinutes: string;
   /**
    * The provider a session belongs to, kept so a second tab of this origin is
    * configured the same way. Without it a fresh tab falls back to the default
@@ -40,9 +55,10 @@ export interface StorageChoice {
 }
 
 const DEFAULT_CHOICE: StorageChoice = {
-  session: "local",
-  identity: "idb",
+  state: "local",
+  credential: "idb",
   cookieDomain: "",
+  maxIdleMinutes: "",
   iiUrl: "",
   iiCanisterId: "",
   // Matches the `checked` attribute in index.html, which is there so the box is
@@ -120,10 +136,6 @@ const expiryMs = (chain: DelegationChain): number | undefined =>
         ),
       );
 
-/** The principal an application's canisters see, derived from the account key. */
-const accountPrincipal = (session: Session): Principal =>
-  Principal.selfAuthenticating(new Uint8Array(session.accountKey));
-
 const formatRemaining = (ms: number): string => {
   if (!Number.isFinite(ms)) return "-";
   if (ms <= 0) return "expired";
@@ -160,8 +172,8 @@ const shortPrincipal = (principal: Principal): string => {
 
 export interface SessionClientHandle {
   client: AuthClient;
-  sessionStorage: SessionStorage;
-  identityStorage: IdentityStorage;
+  stateStorage: StateStorage;
+  credentialStorage: CredentialStorage;
   params: SessionClientParams;
 }
 
@@ -178,25 +190,35 @@ export interface ProviderParams {
   agentOptions?: { host?: string; shouldFetchRootKey?: boolean };
 }
 
-const storagesFor = (
-  choice: StorageChoice,
-): { session: SessionStorage; identity: IdentityStorage } => ({
-  session:
-    choice.session === "cookie" && choice.cookieDomain !== ""
-      ? new CookieSessionStorage({ domain: choice.cookieDomain })
-      : new LocalSessionStorage(),
-  identity:
-    choice.identity === "local"
-      ? new LocalIdentityStorage()
-      : new IdbIdentityStorage(),
-});
+const stateStorageFor = (choice: StorageChoice): StateStorage => {
+  // A cookie store needs a domain to publish under; without one there is nothing
+  // for a sibling to read, so the local store is the honest fallback.
+  if (choice.state === "cookie" && choice.cookieDomain !== "") {
+    return new CookieStateStorage({ domain: choice.cookieDomain });
+  }
+  return choice.state === "memory"
+    ? new MemoryStateStorage()
+    : new LocalStateStorage();
+};
+
+const credentialStorageFor = (choice: StorageChoice): CredentialStorage => {
+  switch (choice.credential) {
+    case "local":
+      return new LocalCredentialStorage();
+    case "memory":
+      return new MemoryCredentialStorage();
+    case "shared-memory":
+      return new SharedMemoryCredentialStorage();
+    default:
+      return new IdbCredentialStorage();
+  }
+};
 
 export const createSessionClient = (
   params: SessionClientParams,
 ): SessionClientHandle => {
-  const { session: sessionStorage, identity: identityStorage } = storagesFor(
-    params.choice,
-  );
+  const stateStorage = stateStorageFor(params.choice);
+  const credentialStorage = credentialStorageFor(params.choice);
 
   const client = new AuthClient({
     identityProvider: {
@@ -212,14 +234,14 @@ export const createSessionClient = (
     derivationOrigin: params.derivationOrigin,
     transport: params.transport,
     agentOptions: params.agentOptions,
-    sessionStorage,
-    identityStorage,
-    // The panel is the point of the page; an idle timer reloading it would take
-    // the log with it.
-    idleOptions: { disableIdle: true },
+    stateStorage,
+    credentialStorage,
+    // Unset leaves the store's own answer, which is what an application would
+    // normally want; the panel exposes it so both directions are testable.
+    resumable: params.choice.resumable,
   });
 
-  return { client, sessionStorage, identityStorage, params };
+  return { client, stateStorage, credentialStorage, params };
 };
 
 /**
@@ -270,10 +292,29 @@ export const mountSessionPanel = (options: {
   // The radios and the domain field are the source of truth once the panel is up;
   // the stored copy exists for the redirect callback, which is a separate load.
   const choiceFromControls = (): StorageChoice => ({
-    session:
-      control("sessionStorageCookie")?.checked === true ? "cookie" : "local",
-    identity:
-      control("identityStorageLocal")?.checked === true ? "local" : "idb",
+    state:
+      control("stateStorageCookie")?.checked === true
+        ? "cookie"
+        : control("stateStorageMemory")?.checked === true
+          ? "memory"
+          : "local",
+    credential:
+      control("credentialStorageLocal")?.checked === true
+        ? "local"
+        : control("credentialStorageMemory")?.checked === true
+          ? "memory"
+          : control("credentialStorageShared")?.checked === true
+            ? "shared-memory"
+            : "idb",
+    // Three states, so a checkbox will not do: unset means "whatever the store
+    // says", which is the case an application is normally in.
+    resumable:
+      control("resumableOn")?.checked === true
+        ? true
+        : control("resumableOff")?.checked === true
+          ? false
+          : undefined,
+    maxIdleMinutes: control("sessionMaxIdle")?.value.trim() ?? "",
     cookieDomain: control("sessionCookieDomain")?.value.trim() ?? "",
     iiUrl: control("iiUrl")?.value.trim() ?? "",
     iiCanisterId: control("iiCanisterId")?.value.trim() ?? "",
@@ -285,10 +326,18 @@ export const mountSessionPanel = (options: {
     const node = control(id);
     if (node !== null) node.checked = value;
   };
-  setChecked("sessionStorageLocal", stored.session === "local");
-  setChecked("sessionStorageCookie", stored.session === "cookie");
-  setChecked("identityStorageIdb", stored.identity === "idb");
-  setChecked("identityStorageLocal", stored.identity === "local");
+  setChecked("stateStorageLocal", stored.state === "local");
+  setChecked("stateStorageCookie", stored.state === "cookie");
+  setChecked("stateStorageMemory", stored.state === "memory");
+  setChecked("credentialStorageIdb", stored.credential === "idb");
+  setChecked("credentialStorageLocal", stored.credential === "local");
+  setChecked("credentialStorageMemory", stored.credential === "memory");
+  setChecked("credentialStorageShared", stored.credential === "shared-memory");
+  setChecked("resumableDefault", stored.resumable === undefined);
+  setChecked("resumableOn", stored.resumable === true);
+  setChecked("resumableOff", stored.resumable === false);
+  const maxIdleEl = control("sessionMaxIdle");
+  if (maxIdleEl !== null) maxIdleEl.value = stored.maxIdleMinutes;
   const domainEl = control("sessionCookieDomain");
   if (domainEl !== null) domainEl.value = stored.cookieDomain;
 
@@ -323,40 +372,40 @@ export const mountSessionPanel = (options: {
   let delegationChanges = 0;
 
   const render = () => {
-    const stored = handle.sessionStorage.get();
+    const status = handle.client.getStatus();
+    // The record itself, rather than what the client makes of it: a sibling reads
+    // the same bytes and derives `held` per origin, so this is what shows a shared
+    // sign-in this origin cannot yet act with. The session chain is no longer here
+    // — it lives in the credential store — so the expiry comes off the record.
+    const record = handle.stateStorage.get();
+    const sessionExpiryMs =
+      record === null
+        ? undefined
+        : Number(record.expiration / BigInt(1_000_000));
 
+    // Four cases the library orders for us, rather than a boolean this page
+    // would have to interpret. `signed-in-elsewhere` is the one worth seeing:
+    // a sibling holds the sign-in and this origin has no credential for it yet.
     setText(
       "sessionState",
-      stored !== null
-        ? "signed in"
-        : options.appIdentity?.() !== undefined
-          ? "signed in without a session — the legacy protocol path does not create one"
-          : "no session",
+      status.status === "signed-out" && options.appIdentity?.() !== undefined
+        ? "signed in without a session — the legacy protocol path does not create one"
+        : status.status,
     );
     setText(
       "sessionAccountPrincipal",
-      stored === null ? "-" : accountPrincipal(stored).toText(),
-    );
-    // Not `identity.getPrincipal()`: a session identity answers that from the
-    // account key, so it would repeat the field above. This is the key the
-    // session chain was signed to, which is what II resolves a session from.
-    setText(
-      "sessionSessionPrincipal",
-      stored === null || sessionKeyPrincipal === undefined
-        ? "-"
-        : sessionKeyPrincipal.toText(),
+      status.status === "signed-out" ? "-" : status.principal.toText(),
     );
     setText(
       "sessionExpiry",
-      stored === null
+      sessionExpiryMs === undefined
         ? "-"
-        : describeExpiry(expiryMs(stored.chain), stored.chain),
+        : formatRemaining(sessionExpiryMs - Date.now()),
     );
 
     // `getDelegation()` falls back to the session chain when nothing has been
     // minted, so a chain expiring with the session is not an app delegation.
     const chain = heldChain(identity);
-    const sessionExpiry = stored === null ? undefined : expiryMs(stored.chain);
     const chainExpiry = chain === undefined ? undefined : expiryMs(chain);
     // Until something is minted the identity presents an empty chain rooted at the
     // account key, which is how it answers for the account principal with nothing
@@ -365,7 +414,7 @@ export const mountSessionPanel = (options: {
       chain !== undefined && chain.delegations.length > 0 ? chain : undefined;
     setText(
       "delegationExpiry",
-      stored === null
+      record === null
         ? "-"
         : delegation === undefined
           ? "none held"
@@ -395,17 +444,24 @@ export const mountSessionPanel = (options: {
       }
     }
 
-    const hint =
-      handle.sessionStorage instanceof CookieSessionStorage
-        ? handle.sessionStorage.readHint()
-        : null;
     setText(
       "sessionHint",
-      hint === null
+      record === null
         ? "none"
-        : `${shortPrincipal(hint.principal)} until ${new Date(
-            hint.expiresAtMs,
-          ).toISOString()}`,
+        : `${shortPrincipal(record.principal)} until ${new Date(
+            sessionExpiryMs ?? 0,
+          ).toISOString()}${record.held ? "" : " (not held here)"}`,
+    );
+    // What the client actually sends, which is the option where one is set and the
+    // store's own answer otherwise — not the store's answer alone, or forcing it off
+    // would still read as yes.
+    const storeSays = handle.stateStorage.resumable === true;
+    const effective = handle.params.choice.resumable ?? storeSays;
+    setText(
+      "sessionResumable",
+      `${effective ? "yes" : "no"} (store says ${storeSays ? "yes" : "no"}${
+        handle.params.choice.resumable === undefined ? "" : ", overridden"
+      })`,
     );
   };
 
@@ -416,13 +472,6 @@ export const mountSessionPanel = (options: {
   const refresh = async () => {
     try {
       identity = await handle.client.getIdentity();
-      const key = await handle.identityStorage.get();
-      sessionKeyPrincipal =
-        key === null
-          ? undefined
-          : Principal.selfAuthenticating(
-              new Uint8Array(key.getPublicKey().toDer()),
-            );
     } catch (error) {
       log(
         `could not read the identity: ${
@@ -433,9 +482,12 @@ export const mountSessionPanel = (options: {
     render();
   };
 
+  // The state store is what announces a change now, not the client: a sign-out in
+  // another tab, or a sibling publishing a sign-in, both land as a state change.
+  // A store whose medium cannot report one implements nothing, hence the `?.`.
   const listen = (h: SessionClientHandle) =>
-    h.client.subscribe(() => {
-      log("client reported a change");
+    h.stateStorage.subscribe?.(() => {
+      log("the state store reported a change");
       void refresh();
     });
   let unsubscribe = listen(handle);
@@ -444,7 +496,7 @@ export const mountSessionPanel = (options: {
   // `dispose` releases the old one's listeners, channel and identity and leaves
   // storage alone, so a session in progress survives being reconfigured.
   const rebuild = (what: string) => {
-    unsubscribe();
+    unsubscribe?.();
     handle.client.dispose();
     handle = build();
     options.onClient(handle);
@@ -465,6 +517,7 @@ export const mountSessionPanel = (options: {
     "iiCanisterId",
     "derivationOrigin",
     "sessionCookieDomain",
+    "sessionMaxIdle",
   ]) {
     document.getElementById(id)?.addEventListener("input", () => {
       writeStorageChoice(choiceFromControls());
@@ -482,10 +535,16 @@ export const mountSessionPanel = (options: {
     "iiCanisterId",
     "derivationOrigin",
     "sessionCookieDomain",
-    "sessionStorageLocal",
-    "sessionStorageCookie",
-    "identityStorageIdb",
-    "identityStorageLocal",
+    "stateStorageLocal",
+    "stateStorageCookie",
+    "stateStorageMemory",
+    "credentialStorageIdb",
+    "credentialStorageLocal",
+    "credentialStorageMemory",
+    "credentialStorageShared",
+    "resumableDefault",
+    "resumableOn",
+    "resumableOff",
   ]) {
     document.getElementById(id)?.addEventListener("change", () => {
       // The redirect callback is a separate load and cannot read these controls,
@@ -548,13 +607,8 @@ export const mountSessionPanel = (options: {
   // `prompt` and `hint` are baked into the authorize URL at construction, so a
   // silent re-issue is its own client sharing this one's storage.
   onClick("sessionSilentBtn", async () => {
-    const stored = handle.sessionStorage.get();
-    const hint =
-      handle.sessionStorage instanceof CookieSessionStorage
-        ? (handle.sessionStorage.readHint()?.principal ?? undefined)
-        : stored === null
-          ? undefined
-          : accountPrincipal(stored);
+    // The record names the account to re-issue for, whichever store holds it.
+    const hint = handle.stateStorage.get()?.principal;
     log(
       `silent re-auth requested${
         hint === undefined
@@ -575,8 +629,8 @@ export const mountSessionPanel = (options: {
       },
       derivationOrigin: handle.params.derivationOrigin,
       agentOptions: handle.params.agentOptions,
-      sessionStorage: handle.sessionStorage,
-      idleOptions: { disableIdle: true },
+      stateStorage: handle.stateStorage,
+      credentialStorage: handle.credentialStorage,
       prompt: "none",
       hint,
     });

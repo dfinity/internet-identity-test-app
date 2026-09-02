@@ -151,16 +151,16 @@
         <div id="sessionState">-</div>
         <h3>Account principal (what an app's canisters see):</h3>
         <div data-role="account-principal" id="sessionAccountPrincipal">-</div>
-        <h3>Session key principal (what II resolves the session from):</h3>
-        <div data-role="session-principal" id="sessionSessionPrincipal">-</div>
         <h3>Session expires in:</h3>
         <div id="sessionExpiry">-</div>
         <h3>App delegation expires in:</h3>
         <div id="delegationExpiry">-</div>
         <h3>Delegation replacements observed:</h3>
         <div id="delegationChanges">0</div>
-        <h3>Cross-subdomain hint cookie:</h3>
+        <h3>The stored state record (what a sibling origin reads):</h3>
         <div id="sessionHint">none</div>
+        <h3>Resumable (may the provider keep this sign-in?):</h3>
+        <div id="sessionResumable">-</div>
         <div>
           <button id="sessionSignOutBtn">
             Sign out (ends it at the canister)
@@ -172,21 +172,28 @@
         <h3>Storage</h3>
         <div>
           <label style="display: inline-block; width: 200px"
-            >Session storage:</label
+            >State storage:</label
           >
           <label
             ><input
               type="radio"
-              name="sessionStorageChoice"
-              id="sessionStorageLocal"
+              name="stateStorageChoice"
+              id="stateStorageLocal"
             />localStorage</label
           >
           <label
             ><input
               type="radio"
-              name="sessionStorageChoice"
-              id="sessionStorageCookie"
-            />localStorage + hint cookie</label
+              name="stateStorageChoice"
+              id="stateStorageCookie"
+            />cookie (shared with siblings)</label
+          >
+          <label
+            ><input
+              type="radio"
+              name="stateStorageChoice"
+              id="stateStorageMemory"
+            />memory</label
           >
         </div>
         <div>
@@ -203,22 +210,69 @@
         </div>
         <div>
           <label style="display: inline-block; width: 200px"
-            >Identity storage:</label
+            >Credential storage:</label
           >
           <label
             ><input
               type="radio"
-              name="identityStorageChoice"
-              id="identityStorageIdb"
+              name="credentialStorageChoice"
+              id="credentialStorageIdb"
             />IndexedDB</label
           >
           <label
             ><input
               type="radio"
-              name="identityStorageChoice"
-              id="identityStorageLocal"
+              name="credentialStorageChoice"
+              id="credentialStorageLocal"
             />localStorage</label
           >
+          <label
+            ><input
+              type="radio"
+              name="credentialStorageChoice"
+              id="credentialStorageMemory"
+            />memory</label
+          >
+          <label
+            ><input
+              type="radio"
+              name="credentialStorageChoice"
+              id="credentialStorageShared"
+            />shared memory (across tabs)</label
+          >
+        </div>
+        <div>
+          <label style="display: inline-block; width: 200px">Resumable:</label>
+          <label
+            ><input
+              type="radio"
+              name="resumableChoice"
+              id="resumableDefault"
+            />whatever the store says</label
+          >
+          <label
+            ><input type="radio" name="resumableChoice" id="resumableOn" />force
+            on</label
+          >
+          <label
+            ><input
+              type="radio"
+              name="resumableChoice"
+              id="resumableOff"
+            />force off</label
+          >
+        </div>
+        <div>
+          <label
+            for="sessionMaxIdle"
+            style="display: inline-block; width: 200px"
+            >Max idle (minutes):</label
+          >
+          <input
+            type="text"
+            id="sessionMaxIdle"
+            placeholder="blank = the provider's default, currently 7 days"
+          />
         </div>
         <h3>Log:</h3>
         <pre id="sessionLog"></pre>

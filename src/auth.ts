@@ -40,6 +40,7 @@ export interface Icrc3Attributes {
 export const authWithII = async ({
   url: url_,
   maxTimeToLive,
+  maxTimeToIdle,
   allowPinAuthentication,
   derivationOrigin,
   sessionIdentity,
@@ -52,6 +53,8 @@ export const authWithII = async ({
 }: {
   url: string;
   maxTimeToLive?: bigint;
+  /** How long the session may go unminted before the provider ends it. */
+  maxTimeToIdle?: bigint;
   allowPinAuthentication?: boolean;
   derivationOrigin?: string;
   autoSelectionPrincipal?: string;
@@ -108,7 +111,7 @@ export const authWithII = async ({
     const nonce = icrc3Nonce ?? crypto.getRandomValues(new Uint8Array(32));
 
     const [identity, icrc3Attributes] = await Promise.all([
-      authClient.signIn({ maxTimeToLive }),
+      authClient.signIn({ maxTimeToLive, maxTimeToIdle }),
       hasAttributes && useIcrc3Attributes
         ? authClient.requestAttributes({
             keys: requestAttributes,

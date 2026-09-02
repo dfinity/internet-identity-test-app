@@ -22,7 +22,11 @@ import {
   Icrc3Attributes,
 } from "./auth";
 import { formatIcrc3Attributes } from "./icrc3";
-import { mountSessionPanel, type SessionClientHandle } from "./sessionClient";
+import {
+  mountSessionPanel,
+  readStorageChoice,
+  type SessionClientHandle,
+} from "./sessionClient";
 import {
   CALLBACK_PATH,
   decodeResults,
@@ -538,6 +542,13 @@ const init = async () => {
       /* hours */ BigInt(8) * /* nanoseconds */ BigInt(3_600_000_000_000);
     const maxTimeToLive =
       maxTimeToLive_ > BigInt(0) ? maxTimeToLive_ : authClientDefaultMaxTTL;
+    // The panel owns this one, since it is a property of the session rather than
+    // of this form. Blank leaves the provider's own default.
+    const maxIdleMinutes = Number(readStorageChoice().maxIdleMinutes);
+    const maxTimeToIdle =
+      Number.isFinite(maxIdleMinutes) && maxIdleMinutes > 0
+        ? BigInt(Math.floor(maxIdleMinutes)) * BigInt(60_000_000_000)
+        : undefined;
     const derivationOrigin =
       derivationOriginEl.value !== "" ? derivationOriginEl.value : undefined;
     const autoSelectionPrincipal =
@@ -559,6 +570,7 @@ const init = async () => {
         url: iiUrlEl.value,
         authClient: sessionHandle.client,
         maxTimeToLive,
+        maxTimeToIdle,
         derivationOrigin,
         allowPinAuthentication,
         sessionIdentity: getLocalIdentity(),
