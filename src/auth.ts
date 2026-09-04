@@ -42,6 +42,7 @@ export const authWithII = async ({
   maxTimeToLive,
   allowPinAuthentication,
   derivationOrigin,
+  requestNotifications,
   sessionIdentity,
   autoSelectionPrincipal,
   useIcrc25,
@@ -53,6 +54,10 @@ export const authWithII = async ({
   maxTimeToLive?: bigint;
   allowPinAuthentication?: boolean;
   derivationOrigin?: string;
+  // Non-standard II extension: ask II to offer the notification opt-in for this
+  // app. Only the window/postMessage path below carries it; the ICRC-25 and
+  // redirect paths go through AuthClient, whose options don't expose it.
+  requestNotifications?: boolean;
   autoSelectionPrincipal?: string;
   sessionIdentity: SignIdentity;
   useIcrc25?: boolean;
@@ -173,6 +178,7 @@ export const authWithII = async ({
     derivationOrigin,
     allowPinAuthentication,
     autoSelectionPrincipal,
+    iiNotifications: requestNotifications,
   };
 
   win.postMessage(request, iiUrl.origin);

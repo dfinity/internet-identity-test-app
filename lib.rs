@@ -3,6 +3,9 @@ use asset_util::{collect_assets, Asset, CertifiedAssets, ContentEncoding, Conten
 use candid::{CandidType, Deserialize, Principal};
 use ic_cdk::api;
 use ic_cdk_macros::{init, post_upgrade, query, update};
+use ii_notification_client::{
+    well_known::SendersDocument, Notification, NotificationClient, NotificationUrgency,
+};
 use include_dir::{include_dir, Dir};
 use serde_bytes::ByteBuf;
 use std::cell::RefCell;
@@ -20,6 +23,9 @@ const AUTH_CALLBACKS_PATH: &str = "/.well-known/ii-auth-callbacks";
 // knows about this origin on its own.
 const APP_METADATA_PATH: &str = "/.well-known/ii-app-metadata";
 const EVIL_APP_METADATA_PATH: &str = "/.well-known/evil-app-metadata";
+// Notification sender allowlist II fetches (at consent) to authorize a
+// canister as a sender for this origin. This canister lists itself.
+const NOTIFICATION_SENDERS_PATH: &str = "/.well-known/ii-notification-senders";
 const EMPTY_ALTERNATIVE_ORIGINS: &str = r#"{"alternativeOrigins":[]}"#;
 const OUTDATED_INVALID_CERTIFICATE_HEADER: &str = ":2dn3omR0cmVlgwGDAYMBgwJIY2FuaXN0ZXKDAYMBggRYIF7eYW50QXA1hAANBQ4J616Ekjch0ihDxnNGwvlxxIKDgwGCBFggH4wduBeihx+gd8Oe2KvzyQxp/PEe6ustjHJNlVhLbmaDAkqAAAAAABAAAwEBgwGDAYMCTmNlcnRpZmllZF9kYXRhggNYIIA3JGAjACCVyCTmsRmhhlZDI5oDZZkhGVMbpCIFTEejggRYIIMJ950nCB4emD2uvICtY5WfLhcOzb2BaqH4EvUGTX2xggRYIFfnBG3quMbImRDu81QLZKq0ADXD75bQIoPHA2y4JRQVggRYIETEKmiZ1Lflrx8sIiDUOqBdb7X+mJ5+kEturndxJYzeggRYINPKhi8ZGTDLJJGHdaSlL3lxf8JFGiBHe3FVp4y/myCvggRYIIZ883QyMwhObp/SFU8xtXu8w8xGgwEWfkJYAWqC9dNSgwGCBFgg49iYnFVeAADyzEwGNNe…Bcfct/T4ZWVYbJe/P3gUbLOS8n9uDAklodHRwX2V4cHKDAYMBgwGCBFgggaSHI9J56LbuKjb58O8AWYlQNqTWZBxB58L7Y6u9j2ODAksud2VsbC1rbm93boMBggRYIJY8druSGXKdr/LHH3Kr/F+Vo9VwgluKJZS6HxkTrIeUgwJWaWktYWx0ZXJuYXRpdmUtb3JpZ2luc4MCQzwkPoMCWCBiB64Pds+kxrd7O3KKhS3TAcooPTqycnGLKWuiy3dP6IMCQIMCWCCaryvDtyyZdDWHqiLmkc63lZuPrBF2Tt6ULsG0LUkWcIIDQIIEWCAYA1f5ooQFb7bDDkKE0QhYJLkfsn2j1GCIGJvp8r8ucYIEWCB28Uo/B0pARPP3FnDUBj83i4NpGPehI4IGGI2I2iOQhg==:, expr_path=:2dn3hGlodHRwX2V4cHJrLndlbGwta25vd252aWktYWx0ZXJuYXRpdmUtb3JpZ2luc2M8JD4=:, version=2";
 
@@ -56,6 +62,183 @@ fn caller_attributes() -> CallerAttributes {
         signer: api::msg_caller_info_signer(),
         data: ByteBuf::from(api::msg_caller_info_data()),
     }
+}
+
+// ===== Notifications: send test notifications through II =====
+//
+// Two halves, because delivery and content travel separately. `send_notification`
+// asks II to ping the recipient's devices: II keeps no content, and drops the
+// notification id at buffering, so two sends are two pings no matter what ids
+// they carry. What the user actually reads comes from `ii_pending_notifications`
+// below, which II's service worker pulls as the recipient and renders keyed by
+// each item's id — so that id, not the send, is what dedups and replaces.
+//
+// Sending only works from a public canister origin II can reach, since II
+// authorizes the caller by fetching this origin's
+// `/.well-known/ii-notification-senders`. `origin` is the origin the user
+// consented from; `recipient` is the principal II handed this app at sign-in.
+
+/// How to shape a batch, so one endpoint can exercise II's accept path: a
+/// hundred at once, an already-expired notification, a chosen urgency, repeated
+/// ids.
+#[derive(CandidType, Deserialize)]
+struct SendOptions {
+    /// Notifications in the batch. Absent = 1.
+    count: Option<u32>,
+    /// `low` | `normal` | `high`. Absent = II's default.
+    urgency: Option<String>,
+    /// Relative expiry. Negative puts it in the past, which II rejects as
+    /// `invalid` — the point of allowing it.
+    expires_in_secs: Option<i64>,
+    /// Reused verbatim for every notification in the batch when set, so a
+    /// repeated id can be shown not to dedup. Absent = one id per notification.
+    fixed_id: Option<String>,
+}
+
+#[update]
+async fn send_notification(ii: Principal, recipient: Principal, origin: String) -> String {
+    send_notifications(ii, recipient, origin, None).await
+}
+
+#[update]
+async fn send_notifications(
+    ii: Principal,
+    recipient: Principal,
+    origin: String,
+    options: Option<SendOptions>,
+) -> String {
+    let options = options.unwrap_or(SendOptions {
+        count: None,
+        urgency: None,
+        expires_in_secs: None,
+        fixed_id: None,
+    });
+    let count = options.count.unwrap_or(1);
+    let urgency = match options.urgency.as_deref() {
+        None => None,
+        Some("low") => Some(NotificationUrgency::Low),
+        Some("normal") => Some(NotificationUrgency::Normal),
+        Some("high") => Some(NotificationUrgency::High),
+        Some(other) => return format!("unknown urgency {other:?}, expected low|normal|high"),
+    };
+    let expires_at = options.expires_in_secs.map(|secs| {
+        let now = api::time() as i128;
+        (now + secs as i128 * 1_000_000_000).max(0) as u64
+    });
+
+    let now = api::time();
+    let notifications = (0..count)
+        .map(|index| {
+            let id = match &options.fixed_id {
+                Some(fixed) => fixed.as_bytes().to_vec(),
+                None => format!("{now}-{index}").into_bytes(),
+            };
+            let mut notification = Notification::new(id, recipient);
+            notification.urgency = urgency;
+            notification.expires_at = expires_at;
+            notification
+        })
+        .collect();
+
+    match NotificationClient::new(ii, origin)
+        .notify(notifications)
+        .await
+    {
+        Ok(response) => format!(
+            "sent={} accepted={} rejected={:?} retry_after_ms={:?} resend_epoch={:?}",
+            count,
+            response.accepted.unwrap_or(0),
+            response.rejected.unwrap_or_default(),
+            response.retry_after_ms,
+            response.resend_epoch,
+        ),
+        Err(err) => format!("call failed: {err}"),
+    }
+}
+
+/// One notification this app has pending for a caller, in the shape II's
+/// service worker pulls (`id: blob; title; body; url; created_at`). `id` becomes
+/// the on-screen notification's tag, so re-adding an id replaces that
+/// notification instead of adding another, and dropping an id closes it on every
+/// device at the next pull. `url` is an optional deep link the worker opens on a
+/// click; `created_at` is when the content was queued.
+#[derive(CandidType, Deserialize, Clone)]
+struct PendingNotification {
+    id: ByteBuf,
+    title: String,
+    body: String,
+    url: Option<String>,
+    created_at: u64,
+}
+
+thread_local! {
+    /// Keyed by caller: the frontend and the service worker both authenticate as
+    /// the same per-app principal, so what the page queues is what the worker
+    /// pulls.
+    static PENDING: RefCell<Vec<(Principal, Vec<PendingNotification>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+fn with_pending<R>(caller: Principal, f: impl FnOnce(&mut Vec<PendingNotification>) -> R) -> R {
+    PENDING.with_borrow_mut(|all| {
+        if let Some(index) = all.iter().position(|(principal, _)| *principal == caller) {
+            return f(&mut all[index].1);
+        }
+        all.push((caller, Vec::new()));
+        let last = all.len() - 1;
+        f(&mut all[last].1)
+    })
+}
+
+/// The pull interface II's service worker calls as the recipient.
+#[query]
+fn ii_pending_notifications() -> Vec<PendingNotification> {
+    with_pending(api::msg_caller(), |pending| pending.clone())
+}
+
+/// Queues a notification for the caller, replacing any with the same `id` — the
+/// same thing a second add of one id does on screen. The `id` is given as text
+/// for convenience and stored as its bytes, the same blob the ping carries.
+#[update]
+fn add_pending_notification(
+    id: String,
+    title: String,
+    body: Option<String>,
+    url: Option<String>,
+) -> u32 {
+    with_pending(api::msg_caller(), |pending| {
+        let entry = PendingNotification {
+            id: ByteBuf::from(id.into_bytes()),
+            title,
+            body: body.unwrap_or_default(),
+            url,
+            created_at: api::time(),
+        };
+        match pending.iter().position(|existing| existing.id == entry.id) {
+            Some(index) => pending[index] = entry,
+            None => pending.push(entry),
+        }
+        pending.len() as u32
+    })
+}
+
+/// Drops one pending notification, which closes it on every device at the next
+/// pull.
+#[update]
+fn remove_pending_notification(id: String) -> u32 {
+    let id = id.into_bytes();
+    with_pending(api::msg_caller(), |pending| {
+        pending.retain(|existing| existing.id.as_ref() != id.as_slice());
+        pending.len() as u32
+    })
+}
+
+#[update]
+fn clear_pending_notifications() -> u32 {
+    with_pending(api::msg_caller(), |pending| {
+        pending.clear();
+        0
+    })
 }
 
 /// Function to update the asset /.well-known/ii-alternative-origins.
@@ -305,6 +488,16 @@ fn init_assets(alternative_origins: String, extra_auth_callbacks: Vec<String>) {
     assets.push(Asset {
         url_path: AUTH_CALLBACKS_PATH.to_string(),
         content: content.into_bytes(),
+        encoding: ContentEncoding::Identity,
+        content_type: ContentType::JSON,
+    });
+
+    // Sender allowlist: authorize this canister to send notifications for its
+    // own origin. II fetches this at consent time.
+    let senders = SendersDocument::new([canister_id]).to_json();
+    assets.push(Asset {
+        url_path: NOTIFICATION_SENDERS_PATH.to_string(),
+        content: senders.into_bytes(),
         encoding: ContentEncoding::Identity,
         content_type: ContentType::JSON,
     });

@@ -25,6 +25,21 @@ type AppMetadataMode = variant {
     Redirect: record { location: text; };
 };
 
+type SendOptions = record {
+    count : opt nat32;            // notifications in the batch; absent = 1
+    urgency : opt text;           // low | normal | high
+    expires_in_secs : opt int64;  // relative; negative lands in the past
+    fixed_id : opt text;          // reused for every notification in the batch
+};
+
+type PendingNotification = record {
+    id : blob;                    // becomes the on-screen notification's tag
+    title : text;
+    body : text;
+    url : opt text;               // optional deep link opened on click
+    created_at : nat64;           // ns; when the content was queued
+};
+
 type CallerAttributes = record {
     /// Canister that signed the attributes attached to the caller's
     /// request (e.g. the Internet Identity canister). Empty when the
@@ -55,4 +70,26 @@ service : (opt InitArg) -> {
   /// tests can verify the round-trip from II → frontend →
   /// `AttributeIdentity` → canister.
   caller_attributes: () -> (CallerAttributes);
+  /// Sends a test notification through II's `notification_send`, from this
+  /// canister as the sender. `ii` is II's backend canister id, `recipient`
+  /// the user's per-app principal, `origin` the origin the user consented
+  /// from. Returns a debug summary of II's response.
+  send_notification: (ii: principal, recipient: principal, origin: text) -> (text);
+  /// Same, but shaped: a batch of `count`, a chosen `urgency`, a relative
+  /// `expires_in_secs` (negative to land in the past, which II rejects as
+  /// `invalid`), and a `fixed_id` reused for every notification — II drops the
+  /// id at buffering, so a repeated id still delivers once per send.
+  send_notifications: (ii: principal, recipient: principal, origin: text, options: opt SendOptions) -> (text);
+
+  /// The pull interface II's service worker calls as the recipient. What it
+  /// returns is what the user sees; each `id` becomes the notification's tag, so
+  /// re-adding an id replaces that notification and dropping one closes it on
+  /// every device at the next pull.
+  ii_pending_notifications: () -> (vec PendingNotification) query;
+  /// Queues a notification for the caller, replacing any with the same id.
+  /// Returns how many are now pending.
+  add_pending_notification: (id: text, title: text, body: opt text, url: opt text) -> (nat32);
+  /// Drops one pending notification. Returns how many remain.
+  remove_pending_notification: (id: text) -> (nat32);
+  clear_pending_notifications: () -> (nat32);
 }

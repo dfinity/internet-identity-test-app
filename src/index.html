@@ -1,165 +1,971 @@
 <html>
   <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script type="module" src="./index.tsx"></script>
   </head>
   <body>
     <style>
+      /* Dark is the design's own ground; light mirrors it. Both are token-only,
+         so every rule below is theme-agnostic. */
+      :root {
+        --bg: #0b0b0d;
+        --pane: #101013;
+        --sunk: #141417;
+        --code: #0e0e11;
+        --line: #26262a;
+        --line2: #3f3f46;
+        --hair: #1d1d21;
+        --ink: #e8e8ec;
+        --strong: #ffffff;
+        --dim: #a1a1a8;
+        --faint: #6b6b72;
+        --ph: #55555c;
+        --sel: #1c1c20;
+        --btnhover: #191920;
+        --segbg: #17171a;
+        --segon: #26262b;
+        --swoff: #3f3f46;
+        --swknob: #a1a1aa;
+        --swon: #f4f4f5;
+        --swknobon: #18181b;
+        --gobg: #f4f4f5;
+        --gobghover: #ffffff;
+        --gofg: #101013;
+        --dotoff: #52525b;
+        --accent: #8c9eff;
+        --ok: #4ade80;
+        --shadow: rgba(0, 0, 0, 0.45);
+        --scrim: rgba(0, 0, 0, 0.45);
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      :root:not([data-theme="dark"]) {
+        @media (prefers-color-scheme: light) {
+          --bg: #f6f6f7;
+          --pane: #ffffff;
+          --sunk: #fbfbfc;
+          --code: #f7f7f8;
+          --line: #e2e2e5;
+          --line2: #c9c9cf;
+          --hair: #ececef;
+          --ink: #18181b;
+          --strong: #000000;
+          --dim: #52525b;
+          --faint: #8a8a93;
+          --ph: #a1a1aa;
+          --sel: #ececef;
+          --btnhover: #f2f2f4;
+          --segbg: #eeeef0;
+          --segon: #ffffff;
+          --swoff: #d4d4d8;
+          --swknob: #ffffff;
+          --swon: #18181b;
+          --swknobon: #ffffff;
+          --gobg: #18181b;
+          --gobghover: #000000;
+          --gofg: #ffffff;
+          --dotoff: #a1a1aa;
+          --accent: #4f46e5;
+          --ok: #16a34a;
+          --shadow: rgba(0, 0, 0, 0.14);
+          --scrim: rgba(0, 0, 0, 0.18);
+        }
+      }
+      :root[data-theme="light"] {
+        --bg: #f6f6f7;
+        --pane: #ffffff;
+        --sunk: #fbfbfc;
+        --code: #f7f7f8;
+        --line: #e2e2e5;
+        --line2: #c9c9cf;
+        --hair: #ececef;
+        --ink: #18181b;
+        --strong: #000000;
+        --dim: #52525b;
+        --faint: #8a8a93;
+        --ph: #a1a1aa;
+        --sel: #ececef;
+        --btnhover: #f2f2f4;
+        --segbg: #eeeef0;
+        --segon: #ffffff;
+        --swoff: #d4d4d8;
+        --swknob: #ffffff;
+        --swon: #18181b;
+        --swknobon: #ffffff;
+        --gobg: #18181b;
+        --gobghover: #000000;
+        --gofg: #ffffff;
+        --dotoff: #a1a1aa;
+        --accent: #4f46e5;
+        --ok: #16a34a;
+        --shadow: rgba(0, 0, 0, 0.14);
+        --scrim: rgba(0, 0, 0, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        display: grid;
+        grid-template-columns: 244px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      /* ---------- left: grouped navigation ---------- */
+      nav {
+        position: sticky;
+        top: 0;
+        align-self: start;
+        height: 100vh;
+        overflow-y: auto;
+        padding: 26px 16px;
+        background: var(--pane);
+        border-right: 1px solid var(--line);
+      }
+      .navgroup {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 22px 0 8px 10px;
+      }
+      .navgroup:first-child {
+        margin-top: 0;
+      }
+      nav a {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 11px;
+        margin-bottom: 2px;
+        border-radius: 8px;
+        color: var(--dim);
+        text-decoration: none;
+        font-size: 14.5px;
+      }
+      nav a:hover {
+        background: var(--sunk);
+        color: var(--ink);
+      }
+      nav a.current {
+        background: var(--sel);
+        color: var(--strong);
+        font-weight: 500;
+      }
+      .badge {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--dim);
+        background: var(--sunk);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 1px 7px;
+      }
+      .badge:empty {
+        display: none;
+      }
+
+      /* ---------- middle: one task at a time ---------- */
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 30px;
+        align-content: start;
+        padding: 30px 34px 60px;
+        min-width: 0;
+      }
+      /* With a fragment only that panel renders. With none — which is what
+         automation always loads — every panel does, so nothing it fills or
+         clicks is ever hidden. */
+      main:has(section:target) > section:not(:target) {
+        display: none;
+      }
+      section {
+        min-width: 0;
+        scroll-margin-top: 24px;
+      }
+      section > h1 {
+        font-size: 27px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 6px;
+      }
+      p.lede {
+        color: var(--dim);
+        margin: 0 0 26px;
+        max-width: 62ch;
+      }
+      h2 {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 26px 0 12px;
+      }
+      section > h2:first-of-type {
+        margin-top: 0;
+      }
+      .h2row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .h2row .aside {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--faint);
+      }
+
+      .fields {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+        gap: 16px 20px;
+      }
+      .field {
+        min-width: 0;
+      }
+      .field > label {
+        display: block;
+        color: var(--dim);
+        font-size: 14px;
+        margin-bottom: 7px;
+      }
+      input[type="text"],
+      input[type="number"],
+      select,
+      textarea {
+        width: 100%;
+        font: 14px var(--mono);
+        color: var(--ink);
+        background: var(--sunk);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 11px 13px;
+      }
+      select {
+        font-family: inherit;
+        font-size: 15px;
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--ph);
+      }
+      input:focus,
+      select:focus,
+      textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      textarea {
+        min-height: 92px;
+        resize: vertical;
+        line-height: 1.5;
+      }
+
+      .options {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .opt {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 15px 17px;
+        border-top: 1px solid var(--hair);
+      }
+      .opt:first-child {
+        border-top: 0;
+      }
+      .opt .txt {
+        min-width: 0;
+      }
+      .opt label {
+        display: block;
+        font-size: 15px;
+        color: var(--ink);
+      }
+      .opt .sub {
+        color: var(--faint);
+        font-size: 13px;
+        margin-top: 2px;
+      }
+      /* A real checkbox drawn as a switch, so its role and label stay intact. */
+      input[type="checkbox"].switch {
+        appearance: none;
+        flex: 0 0 auto;
+        position: relative;
+        width: 44px;
+        min-width: 44px;
+        height: 26px;
+        margin: 0;
+        border: 0;
+        border-radius: 20px;
+        background: var(--swoff);
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      input[type="checkbox"].switch::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--swknob);
+        transition:
+          transform 0.15s,
+          background 0.15s;
+      }
+      input[type="checkbox"].switch:checked {
+        background: var(--swon);
+      }
+      input[type="checkbox"].switch:checked::after {
+        transform: translateX(18px);
+        background: var(--swknobon);
+      }
+      input[type="checkbox"].switch:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      button {
+        font:
+          500 14.5px/1 system-ui,
+          sans-serif;
+        color: var(--ink);
+        background: var(--sunk);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 11px 16px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--line2);
+        background: var(--btnhover);
+      }
+      button.go {
+        background: var(--gobg);
+        border-color: var(--gobg);
+        color: var(--gofg);
+      }
+      button.go:hover {
+        background: var(--gobghover);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .out,
+      #whoamiResponse,
+      #sendNotificationResponse,
+      #sendBatchResponse,
+      #pendingResponse,
+      #alternativeOrigins,
+      #appMetadata,
+      #messages {
+        font: 12.5px/1.55 var(--mono);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        overflow-x: auto;
+        margin: 12px 0 0;
+        padding: 11px 13px;
+        color: var(--dim);
+        background: var(--sunk);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      #messages:empty,
+      #whoamiResponse:empty,
+      #sendNotificationResponse:empty,
+      #sendBatchResponse:empty,
+      #pendingResponse:empty {
+        display: none;
+      }
+      .radios {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 20px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+      .radios > span {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .radios label {
+        color: var(--dim);
+        font-size: 14px;
+      }
+      input[type="radio"] {
+        width: 16px;
+        min-width: 16px;
+        height: 16px;
+        accent-color: var(--accent);
+      }
+
+      /* ---------- the session drawer ----------
+         Slid off-canvas by transform rather than hidden: every readout in here
+         is read with innerText, which is empty for a display:none element, so
+         the drawer stays rendered whether it is open or shut. */
+      .sessionbtn {
+        position: fixed;
+        top: 16px;
+        right: 20px;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 9px 14px;
+        background: var(--pane);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        font-size: 13.5px;
+        color: var(--dim);
+      }
+      .sessionbtn:hover {
+        color: var(--ink);
+        border-color: var(--line2);
+        background: var(--pane);
+      }
+      .themebtn {
+        right: 200px;
+      }
+      body[data-drawer="open"] .sessionbtn {
+        right: calc(20px + min(430px, 100vw));
+      }
+      body[data-drawer="open"] .themebtn {
+        right: calc(200px + min(430px, 100vw));
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--dotoff);
+      }
+      .sessionbtn[data-connected="true"] .dot {
+        background: var(--ok);
+      }
+      /* Open pushes the page over rather than covering it: the drawer keeps its
+         own width and the grid container gives up the same room. */
+      body[data-drawer="open"] {
+        padding-right: min(430px, 100vw);
+      }
+      body {
+        transition: padding-right 0.18s ease-out;
+      }
+      .rail {
+        position: fixed;
+        top: 0;
+        right: 0;
+        z-index: 40;
+        width: min(430px, 100vw);
+        height: 100vh;
+        overflow-y: auto;
+        padding: 22px 22px 40px;
+        background: var(--pane);
+        border-left: 1px solid var(--line);
+        box-shadow: -24px 0 48px var(--shadow);
+        transform: translateX(101%);
+        transition: transform 0.18s ease-out;
+        pointer-events: none;
+      }
+      .rail[data-open="true"] {
+        transform: none;
+        pointer-events: auto;
+      }
+      .scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 35;
+        background: var(--scrim);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.18s;
+      }
+      .railclose {
+        background: none;
+        border: 0;
+        padding: 4px 6px;
+        color: var(--faint);
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .railclose:hover {
+        color: var(--ink);
+        background: none;
+      }
+      /* Placeholder copy lives in a sibling, never in generated content, so the
+         element e2e reads stays genuinely empty until there is a session. */
+      .empty {
+        display: none;
+        font: 12.5px/1.6 var(--mono);
+        color: var(--ph);
+        margin: 0 0 14px;
+        padding: 13px;
+        background: var(--code);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      pre:empty {
+        display: none;
+      }
+      pre:empty + .empty {
+        display: block;
+      }
+      .railhead {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+      .railhead span {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .readout {
+        margin-bottom: 16px;
+      }
+      .readout > label {
+        display: block;
+        color: var(--dim);
+        font-size: 13.5px;
+        margin-bottom: 6px;
+      }
+      /* The value sits in a styled shell so the value element itself can stay
+         empty and zero-size — e2e asserts #principal is hidden until sign-in. */
+      .shell {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        padding: 10px 12px;
+        background: var(--sunk);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .shell > .v {
+        flex: 1 1 auto;
+        min-width: 0;
+        font: 12.5px/1.5 var(--mono);
+        overflow-wrap: anywhere;
+      }
+      .shell > .ph {
+        color: var(--ph);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      .shell > .v:not(:empty) ~ .ph {
+        display: none;
+      }
+      .copy {
+        flex: 0 0 auto;
+        background: none;
+        border: 0;
+        padding: 2px 4px;
+        color: var(--faint);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .copy:hover {
+        color: var(--accent);
+        background: none;
+      }
+      .segmented {
+        display: inline-flex;
+        gap: 2px;
+        padding: 3px;
+        margin: 6px 0 12px;
+        background: var(--segbg);
+        border-radius: 9px;
+      }
+      .segmented button {
+        background: none;
+        border: 0;
+        border-radius: 6px;
+        padding: 7px 13px;
+        color: var(--dim);
+        font-size: 13.5px;
+      }
+      .segmented button[aria-selected="true"] {
+        background: var(--segon);
+        color: var(--strong);
+      }
+      .rail pre {
+        font: 12.5px/1.6 var(--mono);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin: 0 0 14px;
+        padding: 13px;
+        color: var(--dim);
+        background: var(--code);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        min-height: 44px;
+      }
+      .rail h3 {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 16px 0 7px;
+      }
+      /* Tab filtering only switches on once a human picks a segment, so the
+         plain page automation loads keeps every readout rendered — several are
+         read with innerText, which is empty for a display:none element. */
+      .rail[data-tabs="delegation"] .tabgroup:not([data-tab="delegation"]),
+      .rail[data-tabs="attributes"] .tabgroup:not([data-tab="attributes"]),
+      .rail[data-tabs="raw"] .tabgroup:not([data-tab="raw"]) {
+        display: none;
+      }
+
+      /* The credentials flow builds its own markup, so style it by descent. */
+      #root-vc-flow label {
+        display: block;
+        color: var(--dim);
+        font-size: 14px;
+        margin: 18px 0 7px;
+      }
+      #root-vc-flow button {
+        margin-top: 12px;
+      }
+      #root-vc-flow output {
+        font: 12.5px/1.55 var(--mono);
+        color: var(--dim);
+        overflow-wrap: anywhere;
+      }
+
       .postMessage {
-        border: black solid thin;
-        padding: 1rem;
-        margin: 1rem 0;
-        overflow-wrap: break-word;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin: 10px 0;
+        overflow-wrap: anywhere;
+        font: 12.5px/1.55 var(--mono);
+        color: var(--dim);
       }
-
       .postMessage-title {
-        font-weight: bold;
+        font-weight: 600;
+        color: var(--ink);
       }
-
       .received {
-        background-color: lightblue;
+        border-left: 3px solid var(--accent);
+      }
+      .sent {
+        border-left: 3px solid var(--ok);
       }
 
-      .sent {
-        background-color: lightgreen;
+      @media (max-width: 800px) {
+        body {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        nav {
+          position: static;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
       }
     </style>
+
+    <nav>
+      <div class="navgroup">Authenticate</div>
+      <a href="#card-signin">Sign in</a>
+      <a href="#card-session">Session</a>
+      <a href="#root-vc-flow">Credentials</a>
+      <div class="navgroup">Notifications</div>
+      <a href="#card-send">Send</a>
+      <a href="#card-pending"
+        >Pending<span class="badge" id="pendingCount"></span
+      ></a>
+      <div class="navgroup">Diagnostics</div>
+      <a href="#card-wellknown">Well-knowns</a>
+      <a href="#card-protocol">Protocol tests</a>
+      <a href="#card-agent">User agent</a>
+      <div class="navgroup">View</div>
+      <a href="#">Everything at once</a>
+    </nav>
+
     <main>
-      <section>
-        <h1>Identity</h1>
-        <h2>Sign In</h2>
-        <div>
-          <label for="iiUrl" style="display: inline-block; width: 200px"
-            >Identity Provider:
-          </label>
-          <input
-            type="text"
-            data-role="ii-url"
-            id="iiUrl"
-            value="http://localhost:5173"
-          />
+      <section id="card-signin">
+        <h1>Sign in</h1>
+        <p class="lede">
+          Configure the authorize request, fire it, and inspect what the
+          identity provider returns.
+        </p>
+
+        <h2>Request</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="iiUrl">Identity Provider</label>
+            <input
+              type="text"
+              data-role="ii-url"
+              id="iiUrl"
+              value="http://localhost:5173"
+            />
+          </div>
+          <div class="field">
+            <label for="transport">Transport</label>
+            <select id="transport">
+              <option value="window">Window (popup / postMessage)</option>
+              <option value="redirect">Redirect (ICRC-167 URL)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="maxTimeToLive">Max time to live (ms)</label>
+            <input type="number" id="maxTimeToLive" placeholder="use default" />
+          </div>
+          <div class="field">
+            <label for="derivationOrigin">Derivation origin</label>
+            <input
+              type="text"
+              id="derivationOrigin"
+              placeholder="use default"
+            />
+          </div>
+          <div class="field">
+            <label for="autoSelectionPrincipal">Auto-select principal</label>
+            <input type="text" id="autoSelectionPrincipal" placeholder="none" />
+          </div>
+          <div class="field">
+            <label for="icrc3Nonce">ICRC-3 nonce (base64)</label>
+            <input type="text" id="icrc3Nonce" placeholder="none" />
+          </div>
         </div>
-        <div>
-          <label for="maxTimeToLive" style="display: inline-block; width: 200px"
-            >Max Time to live (ms):</label
-          >
-          <input type="number" id="maxTimeToLive" placeholder="(use default)" />
+
+        <h2>Options</h2>
+        <div class="options">
+          <div class="opt">
+            <div class="txt">
+              <label for="allowPinAuthentication"
+                >PIN Authentication allowed:</label
+              >
+              <div class="sub">Permit browser-storage identities</div>
+            </div>
+            <input
+              type="checkbox"
+              class="switch"
+              checked
+              id="allowPinAuthentication"
+            />
+          </div>
+          <div class="opt">
+            <div class="txt">
+              <label for="requestNotifications">Request notifications:</label>
+              <div class="sub">Ask for the notification scope</div>
+            </div>
+            <input type="checkbox" class="switch" id="requestNotifications" />
+          </div>
+          <div class="opt">
+            <div class="txt">
+              <label for="useIcrc25">Use ICRC-25 protocol:</label>
+              <div class="sub">Signer-standard request shape</div>
+            </div>
+            <input type="checkbox" class="switch" id="useIcrc25" />
+          </div>
+          <div class="opt">
+            <div class="txt">
+              <label for="useIcrc3Attributes">Use ICRC-3 attributes:</label>
+              <div class="sub">Attach certified attribute set</div>
+            </div>
+            <input type="checkbox" class="switch" id="useIcrc3Attributes" />
+          </div>
         </div>
-        <div>
-          <label
-            for="derivationOrigin"
-            style="display: inline-block; width: 200px"
-            >Derivation Origin:</label
-          >
-          <input
-            type="text"
-            id="derivationOrigin"
-            placeholder="(use default)"
-          />
+
+        <div class="h2row">
+          <h2>Request attributes</h2>
+          <span class="aside">JSON</span>
         </div>
-        <div>
-          <label
-            for="autoSelectionPrincipal"
-            style="display: inline-block; width: 200px"
-            >Auto-select identity for known principal:</label
-          >
-          <input type="text" id="autoSelectionPrincipal" placeholder="(none)" />
+        <textarea id="requestAttributes"></textarea>
+
+        <div class="actions">
+          <button class="go" data-action="authenticate" id="signinBtn">
+            Sign In
+          </button>
         </div>
-        <div>
-          <label
-            for="allowPinAuthentication"
-            style="display: inline-block; width: 200px"
-            >PIN Authentication allowed:</label
-          >
-          <input type="checkbox" checked id="allowPinAuthentication" />
-        </div>
-        <div>
-          <label for="transport" style="display: inline-block; width: 200px"
-            >Transport:</label
-          >
-          <select id="transport">
-            <option value="window">Window (popup / postMessage)</option>
-            <option value="redirect">Redirect (ICRC-167 URL)</option>
-          </select>
-        </div>
-        <div>
-          <label for="useIcrc25" style="display: inline-block; width: 200px"
-            >Use ICRC-25 protocol:</label
-          >
-          <input type="checkbox" id="useIcrc25" />
-        </div>
-        <div>
-          <label
-            for="useIcrc3Attributes"
-            style="display: inline-block; width: 200px"
-            >Use ICRC-3 attributes:</label
-          >
-          <input type="checkbox" id="useIcrc3Attributes" />
-        </div>
-        <div>
-          <label for="icrc3Nonce" style="display: inline-block; width: 200px"
-            >ICRC-3 nonce (base64):</label
-          >
-          <input type="text" id="icrc3Nonce" />
-        </div>
-        <div>
-          <label
-            for="requestAttributes"
-            style="display: inline-block; width: 200px"
-            >Request attributes:</label
-          >
-          <textarea id="requestAttributes"></textarea>
-        </div>
-        <button data-action="authenticate" id="signinBtn">Sign In</button>
-        <h3>/.well-known/ii-alternative-origins</h3>
-        <div id="alternativeOrigins"></div>
-        <h3>/.well-known/ii-app-metadata</h3>
-        <div id="appMetadata"></div>
-        <h3>Principal:</h3>
-        <div data-role="principal" id="principal"></div>
-        <h3>Authentication Method:</h3>
-        <div data-role="authn-method"></div>
-        <h3>Delegation:</h3>
-        <pre id="delegation"></pre>
-        <h3>Expiry (ns from now):</h3>
-        <div id="expiration"></div>
-        <h3>Certified Attributes:</h3>
-        <pre id="certifiedAttributes"></pre>
-        <h3>ICRC-3 Attributes (decoded):</h3>
-        <pre id="icrc3AttributesDecoded"></pre>
-        <h3>ICRC-3 Attributes (raw):</h3>
-        <pre id="icrc3Attributes"></pre>
-        <h3>Canister-echoed attributes (decoded):</h3>
-        <div>
-          <label for="iiCanisterId" style="display: inline-block; width: 200px"
-            >II canister id (signer):
-          </label>
-          <input
-            type="text"
-            id="iiCanisterId"
-            placeholder="e.g. rdmx6-jaaaa-aaaaa-aaadq-cai"
-          />
-        </div>
-        <pre id="canisterEchoedAttributes"></pre>
-        <h3>Canister-echoed attributes (raw):</h3>
-        <pre id="canisterEchoedAttributesRaw"></pre>
-        <button id="sendAttributesBtn">Send attributes to canister</button>
       </section>
 
-      <section>
-        <h1>Contact the IC</h1>
-        <label for="hostUrl" style="display: inline-block; width: 120px"
-          >Replica URL:
-        </label>
-        <input type="text" id="hostUrl" value="https://ic0.app/" />
-        <div>
-          <button id="whoamiBtn">Who Am I?</button>
-          <div id="whoamiResponse"></div>
+      <section id="card-session">
+        <h1>Session</h1>
+        <p class="lede">
+          What the provider returned lives in the pane on the right. Echo the
+          signed attributes back through a canister to check the round trip.
+        </p>
+        <h2>Canister echo</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="iiCanisterId">II canister id (signer)</label>
+            <input
+              type="text"
+              id="iiCanisterId"
+              placeholder="e.g. rdmx6-jaaaa-aaaaa-aaadq-cai"
+            />
+          </div>
         </div>
-        <div>
-          <label for="newAlternativeOrigins" style="display: inline-block">
-            Set new value for /.well-known/ii-alternative-origins:
-          </label>
-          <div>
+        <div class="actions">
+          <button id="sendAttributesBtn">Send attributes to canister</button>
+        </div>
+      </section>
+
+      <section id="card-send">
+        <h1>Send</h1>
+        <p class="lede">
+          II keeps no content and drops the notification id when it buffers, so
+          a batch of N delivers N pings whatever ids they carry. What the user
+          reads comes from the pending list.
+        </p>
+
+        <h2>Target</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="hostUrl">Replica URL</label>
+            <input type="text" id="hostUrl" value="https://ic0.app/" />
+          </div>
+          <div class="field">
+            <label for="notificationCanisterId">II backend id</label>
+            <input
+              type="text"
+              id="notificationCanisterId"
+              value="u6uxm-3qaaa-aaaad-ags6a-cai"
+            />
+          </div>
+          <div class="field">
+            <label for="notificationRecipient"
+              >Recipient
+              <span class="hint"
+                >the per-app principal II handed a user; blank = your own. Must
+                have consented from this origin.</span
+              ></label
+            >
+            <div class="actions">
+              <input
+                type="text"
+                id="notificationRecipient"
+                placeholder="blank = your signed-in principal"
+              />
+              <button type="button" id="useMyPrincipalBtn">Use mine</button>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="go" id="sendNotificationBtn">
+            Send test notification
+          </button>
+          <button id="whoamiBtn">Who Am I?</button>
+        </div>
+        <div id="sendNotificationResponse"></div>
+        <div id="whoamiResponse"></div>
+
+        <h2>Shaped batch</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="sendCount">Count</label>
+            <input type="number" id="sendCount" value="1" min="1" />
+          </div>
+          <div class="field">
+            <label for="sendUrgency">Urgency</label>
+            <select id="sendUrgency">
+              <option value="">(default)</option>
+              <option value="low">low</option>
+              <option value="normal">normal</option>
+              <option value="high">high</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="sendExpiresIn">Expires in (s)</label>
+            <input
+              type="text"
+              id="sendExpiresIn"
+              placeholder="negative = rejected as invalid"
+            />
+          </div>
+          <div class="field">
+            <label for="sendFixedId">Fixed id</label>
+            <input
+              type="text"
+              id="sendFixedId"
+              placeholder="one id for the whole batch"
+            />
+          </div>
+        </div>
+        <div class="actions">
+          <button class="go" id="sendBatchBtn">Send batch</button>
+        </div>
+        <div id="sendBatchResponse"></div>
+      </section>
+
+      <section id="card-pending">
+        <h1>Pending</h1>
+        <p class="lede">
+          What the service worker pulls, rendered keyed by id: adding the same
+          id twice replaces one notification instead of showing two, and
+          removing an id closes it on every device at the next pull.
+        </p>
+        <h2>Notification</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="pendingId">Id</label>
+            <input type="text" id="pendingId" value="subject-1" />
+          </div>
+          <div class="field">
+            <label for="pendingTitle">Title</label>
+            <input type="text" id="pendingTitle" value="A test notification" />
+          </div>
+          <div class="field">
+            <label for="pendingBody">Body</label>
+            <input type="text" id="pendingBody" placeholder="optional" />
+          </div>
+          <div class="field">
+            <label for="pendingUrl"
+              >Link <span class="hint">opened on click</span></label
+            >
+            <input type="text" id="pendingUrl" placeholder="optional" />
+          </div>
+        </div>
+        <div class="actions">
+          <button class="go" id="addPendingBtn">Add / replace</button>
+          <button id="removePendingBtn">Remove this id</button>
+          <button id="clearPendingBtn">Clear all</button>
+          <button id="listPendingBtn">List pending</button>
+        </div>
+        <div id="pendingResponse"></div>
+      </section>
+
+      <section id="card-wellknown">
+        <h1>Well-knowns</h1>
+        <p class="lede">
+          Serve the discovery documents II reads — including malformed and
+          redirecting variants, to check that it refuses them.
+        </p>
+
+        <h2>/.well-known/ii-alternative-origins</h2>
+        <div id="alternativeOrigins"></div>
+        <div class="radios">
+          <span>
             <input
               type="radio"
               id="certified"
@@ -168,8 +974,8 @@
               checked
             />
             <label for="certified">Certified</label>
-          </div>
-          <div>
+          </span>
+          <span>
             <input
               type="radio"
               id="uncertified"
@@ -177,8 +983,8 @@
               value="uncertified"
             />
             <label for="uncertified">Uncertified</label>
-          </div>
-          <div>
+          </span>
+          <span>
             <input
               type="radio"
               id="redirect"
@@ -186,20 +992,30 @@
               value="redirect"
             />
             <label for="redirect">Redirect</label>
+          </span>
+        </div>
+        <div class="fields">
+          <div class="field">
+            <label for="redirectLocation">Redirect to</label>
             <input
               type="text"
               id="redirectLocation"
               value="/.well-known/evil-alternative-origins"
             />
           </div>
-          <input type="text" id="newAlternativeOrigins" />
+          <div class="field">
+            <label for="newAlternativeOrigins">New value</label>
+            <input type="text" id="newAlternativeOrigins" />
+          </div>
+        </div>
+        <div class="actions">
           <button id="updateNewAlternativeOrigins">Update Value</button>
         </div>
-        <div>
-          <label for="newAppMetadata" style="display: inline-block">
-            Set new value for /.well-known/ii-app-metadata:
-          </label>
-          <div>
+
+        <h2>/.well-known/ii-app-metadata</h2>
+        <div id="appMetadata"></div>
+        <div class="radios">
+          <span>
             <input
               type="radio"
               id="appMetadataCertified"
@@ -208,8 +1024,8 @@
               checked
             />
             <label for="appMetadataCertified">Certified</label>
-          </div>
-          <div>
+          </span>
+          <span>
             <input
               type="radio"
               id="appMetadataRedirect"
@@ -217,39 +1033,153 @@
               value="redirect"
             />
             <label for="appMetadataRedirect">Redirect</label>
+          </span>
+        </div>
+        <div class="fields">
+          <div class="field">
+            <label for="appMetadataRedirectLocation">Redirect to</label>
             <input
               type="text"
               id="appMetadataRedirectLocation"
               value="/.well-known/evil-app-metadata"
             />
           </div>
-          <textarea id="newAppMetadata"></textarea>
+        </div>
+        <div class="h2row">
+          <h2>New value</h2>
+          <span class="aside">JSON</span>
+        </div>
+        <textarea id="newAppMetadata"></textarea>
+        <div class="actions">
           <button id="updateNewAppMetadata">Update Value</button>
         </div>
       </section>
-      <section>
-        <h1>Protocol Tests</h1>
-        <button id="openIiWindowBtn">Open II tab</button>
-        <button id="invalidDataBtn">Send Invalid Data</button>
-        <button id="incompleteMessageBtn">Send incomplete message</button>
-        <button id="validMessageBtn">Send valid message</button>
-        <button id="closeIIWindowBtn">Close II tab</button>
-        <div>
-          <label for="customMessage" style="display: inline-block">
-            Send custom message:
-          </label>
-          <input type="text" id="customMessage" />
+
+      <section id="card-protocol">
+        <h1>Protocol tests</h1>
+        <p class="lede">
+          Drive the postMessage transport by hand, including the shapes II is
+          supposed to reject.
+        </p>
+        <h2>Window</h2>
+        <div class="actions" style="margin-top: 0">
+          <button id="openIiWindowBtn">Open II tab</button>
+          <button id="closeIIWindowBtn">Close II tab</button>
+        </div>
+        <h2>Messages</h2>
+        <div class="actions" style="margin-top: 0">
+          <button id="validMessageBtn">Send valid message</button>
+          <button id="invalidDataBtn">Send Invalid Data</button>
+          <button id="incompleteMessageBtn">Send incomplete message</button>
+        </div>
+        <div class="fields" style="margin-top: 18px">
+          <div class="field">
+            <label for="customMessage">Custom message</label>
+            <input type="text" id="customMessage" />
+          </div>
+        </div>
+        <div class="actions">
           <button id="customMessageBtn">Send Message</button>
         </div>
-        <h3>WindowPostMessages:</h3>
+        <h2>WindowPostMessages</h2>
         <div id="messages"></div>
       </section>
+
       <section id="root-vc-flow"></section>
-      <section>
-        <h1>User Agent</h1>
-        <p id="userAgent"></p>
-        <p>Is telegram? <span id="isTelegram"></span></p>
+
+      <section id="card-agent">
+        <h1>User agent</h1>
+        <p class="lede">What this browser reports about itself.</p>
+        <div class="out" id="userAgent"></div>
+        <div class="readout" style="margin-top: 16px">
+          <label>Is telegram?</label>
+          <div class="shell"><span class="v" id="isTelegram"></span></div>
+        </div>
       </section>
     </main>
+
+    <button class="sessionbtn themebtn" id="themeBtn" title="Theme">
+      <span id="themeBtnText">Theme</span>
+    </button>
+    <button
+      class="sessionbtn"
+      id="sessionBtn"
+      data-connected="false"
+      aria-expanded="false"
+    >
+      <span class="dot"></span><span id="sessionBtnText">Not connected</span>
+    </button>
+    <div class="scrim" id="sessionScrim"></div>
+
+    <div class="rail" id="sessionRail" data-open="false">
+      <div class="railhead">
+        <span>Session</span>
+        <button class="railclose" id="sessionClose" aria-label="Close">
+          ×
+        </button>
+      </div>
+
+      <div class="readout">
+        <label for="principal">Principal</label>
+        <div class="shell">
+          <span class="v" data-role="principal" id="principal"></span>
+          <span class="ph">—</span>
+          <button class="copy" data-copy="principal">copy</button>
+        </div>
+      </div>
+      <div class="readout">
+        <label>Authentication method</label>
+        <div class="shell">
+          <span class="v" data-role="authn-method"></span>
+          <span class="ph">—</span>
+        </div>
+      </div>
+      <div class="readout">
+        <label for="expiration">Expiry (ns from now)</label>
+        <div class="shell">
+          <span class="v" id="expiration"></span>
+          <span class="ph">—</span>
+          <button class="copy" data-copy="expiration">copy</button>
+        </div>
+      </div>
+
+      <div class="segmented" role="tablist">
+        <button role="tab" aria-selected="true" data-seg="delegation">
+          Delegation
+        </button>
+        <button role="tab" aria-selected="false" data-seg="attributes">
+          Attributes
+        </button>
+        <button role="tab" aria-selected="false" data-seg="raw">Raw</button>
+      </div>
+
+      <div class="tabgroup" data-tab="delegation">
+        <pre id="delegation"></pre>
+        <div class="empty">
+          // No session yet — sign in to inspect the response.
+        </div>
+      </div>
+
+      <div class="tabgroup" data-tab="attributes">
+        <h3>Certified</h3>
+        <pre id="certifiedAttributes"></pre>
+        <div class="empty">// Nothing certified yet.</div>
+        <h3>ICRC-3 (decoded)</h3>
+        <pre id="icrc3AttributesDecoded"></pre>
+        <div class="empty">// No ICRC-3 attributes.</div>
+        <h3>Canister echo</h3>
+        <pre id="canisterEchoedAttributes"></pre>
+        <div class="empty">// Nothing echoed back yet.</div>
+      </div>
+
+      <div class="tabgroup" data-tab="raw">
+        <h3>ICRC-3 (raw)</h3>
+        <pre id="icrc3Attributes"></pre>
+        <div class="empty">// No ICRC-3 attributes.</div>
+        <h3>Canister echo (raw)</h3>
+        <pre id="canisterEchoedAttributesRaw"></pre>
+        <div class="empty">// Nothing echoed back yet.</div>
+      </div>
+    </div>
   </body>
 </html>

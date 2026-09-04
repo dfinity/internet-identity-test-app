@@ -34,6 +34,63 @@ import "./main.css";
 
 const signInBtn = document.getElementById("signinBtn") as HTMLButtonElement;
 const whoamiBtn = document.getElementById("whoamiBtn") as HTMLButtonElement;
+const sendNotificationBtn = document.getElementById(
+  "sendNotificationBtn",
+) as HTMLButtonElement;
+const notificationCanisterIdEl = document.getElementById(
+  "notificationCanisterId",
+) as HTMLInputElement;
+const sendCountEl = document.getElementById("sendCount") as HTMLInputElement;
+const sendUrgencyEl = document.getElementById(
+  "sendUrgency",
+) as HTMLSelectElement;
+const sendExpiresInEl = document.getElementById(
+  "sendExpiresIn",
+) as HTMLInputElement;
+const sendFixedIdEl = document.getElementById(
+  "sendFixedId",
+) as HTMLInputElement;
+const sendBatchBtn = document.getElementById(
+  "sendBatchBtn",
+) as HTMLButtonElement;
+const sendBatchResponseEl = document.getElementById(
+  "sendBatchResponse",
+) as HTMLDivElement;
+const pendingIdEl = document.getElementById("pendingId") as HTMLInputElement;
+const pendingTitleEl = document.getElementById(
+  "pendingTitle",
+) as HTMLInputElement;
+const pendingBodyEl = document.getElementById(
+  "pendingBody",
+) as HTMLInputElement;
+const pendingUrlEl = document.getElementById("pendingUrl") as HTMLInputElement;
+const addPendingBtn = document.getElementById(
+  "addPendingBtn",
+) as HTMLButtonElement;
+const removePendingBtn = document.getElementById(
+  "removePendingBtn",
+) as HTMLButtonElement;
+const clearPendingBtn = document.getElementById(
+  "clearPendingBtn",
+) as HTMLButtonElement;
+const listPendingBtn = document.getElementById(
+  "listPendingBtn",
+) as HTMLButtonElement;
+const pendingResponseEl = document.getElementById(
+  "pendingResponse",
+) as HTMLDivElement;
+const pendingCountEl = document.getElementById(
+  "pendingCount",
+) as HTMLSpanElement;
+const notificationRecipientEl = document.getElementById(
+  "notificationRecipient",
+) as HTMLInputElement;
+const useMyPrincipalBtn = document.getElementById(
+  "useMyPrincipalBtn",
+) as HTMLButtonElement;
+const sendNotificationResponseEl = document.getElementById(
+  "sendNotificationResponse",
+) as HTMLDivElement;
 const updateAlternativeOriginsBtn = document.getElementById(
   "updateNewAlternativeOrigins",
 ) as HTMLButtonElement;
@@ -97,6 +154,9 @@ const autoSelectionPrincipalEl = document.getElementById(
 ) as HTMLInputElement;
 const allowPinAuthenticationEl = document.getElementById(
   "allowPinAuthentication",
+) as HTMLInputElement;
+const requestNotificationsEl = document.getElementById(
+  "requestNotifications",
 ) as HTMLInputElement;
 const useIcrc25El = document.getElementById("useIcrc25") as HTMLInputElement;
 const transportEl = document.getElementById("transport") as HTMLSelectElement;
@@ -182,6 +242,50 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     update_app_metadata: IDL.Func([IDL.Text, AppMetadataMode], [], []),
     whoami: IDL.Func([], [IDL.Principal], ["query"]),
     caller_attributes: IDL.Func([], [CallerAttributes], []),
+    send_notification: IDL.Func(
+      [IDL.Principal, IDL.Principal, IDL.Text],
+      [IDL.Text],
+      [],
+    ),
+    send_notifications: IDL.Func(
+      [
+        IDL.Principal,
+        IDL.Principal,
+        IDL.Text,
+        IDL.Opt(
+          IDL.Record({
+            count: IDL.Opt(IDL.Nat32),
+            urgency: IDL.Opt(IDL.Text),
+            expires_in_secs: IDL.Opt(IDL.Int64),
+            fixed_id: IDL.Opt(IDL.Text),
+          }),
+        ),
+      ],
+      [IDL.Text],
+      [],
+    ),
+    ii_pending_notifications: IDL.Func(
+      [],
+      [
+        IDL.Vec(
+          IDL.Record({
+            id: IDL.Vec(IDL.Nat8),
+            title: IDL.Text,
+            body: IDL.Text,
+            url: IDL.Opt(IDL.Text),
+            created_at: IDL.Nat64,
+          }),
+        ),
+      ],
+      ["query"],
+    ),
+    add_pending_notification: IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Opt(IDL.Text), IDL.Opt(IDL.Text)],
+      [IDL.Nat32],
+      [],
+    ),
+    remove_pending_notification: IDL.Func([IDL.Text], [IDL.Nat32], []),
+    clear_pending_notifications: IDL.Func([], [IDL.Nat32], []),
   });
 };
 
@@ -197,6 +301,11 @@ const updateDelegationView = ({
   icrc3Attributes?: Icrc3Attributes;
 }) => {
   principalEl.innerText = identity.getPrincipal().toText();
+  // Default the recipient to the signed-in principal, but leave a value the
+  // tester has typed alone so a cross-user send survives a re-render.
+  if (notificationRecipientEl.value.trim() === "") {
+    notificationRecipientEl.value = identity.getPrincipal().toText();
+  }
 
   if (authnMethod !== undefined) {
     authnMethodEl.innerText = authnMethod;
@@ -509,6 +618,7 @@ const init = async () => {
         maxTimeToLive,
         derivationOrigin,
         allowPinAuthentication,
+        requestNotifications: requestNotificationsEl.checked,
         sessionIdentity: getLocalIdentity(),
         autoSelectionPrincipal,
         useIcrc25: useIcrc25El.checked,
@@ -723,6 +833,179 @@ sendAttributesBtn.addEventListener("click", async () => {
     }`;
   }
 });
+
+// The recipient to notify: whatever principal is in the field, or the
+// signed-in one when it's blank. Throws on a malformed principal so the caller
+// surfaces it rather than sending to the wrong target.
+const recipientPrincipal = (): Principal => {
+  const typed = notificationRecipientEl.value.trim();
+  if (typed === "") {
+    if (delegationIdentity === undefined) {
+      throw new Error("Sign in, or enter a recipient principal.");
+    }
+    return delegationIdentity.getPrincipal();
+  }
+  return Principal.fromText(typed);
+};
+
+useMyPrincipalBtn.addEventListener("click", () => {
+  if (delegationIdentity === undefined) {
+    showError("Sign in first.");
+    return;
+  }
+  notificationRecipientEl.value = delegationIdentity.getPrincipal().toText();
+});
+
+sendNotificationBtn.addEventListener("click", async () => {
+  const iiText = notificationCanisterIdEl.value.trim();
+  if (iiText === "") {
+    showError("Set the II backend canister id first.");
+    return;
+  }
+  sendNotificationResponseEl.innerText = "Sending...";
+  try {
+    const canisterId = Principal.fromText(readCanisterId());
+    const agent = await HttpAgent.create({
+      host: hostUrlEl.value,
+      identity: delegationIdentity,
+      shouldFetchRootKey: true,
+    });
+    const actor = Actor.createActor(idlFactory, { agent, canisterId });
+    // recipient = this identity's per-app principal; origin = where we\'re served
+    // from (must match the origin consented to and the well-known senders doc).
+    const result = (await actor.send_notification(
+      Principal.fromText(iiText),
+      recipientPrincipal(),
+      window.location.origin,
+    )) as string;
+    sendNotificationResponseEl.innerText = result;
+  } catch (err) {
+    sendNotificationResponseEl.innerText = `Failed: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+  }
+});
+
+// Shaped batches and the pending list both talk to this app as the signed-in
+// identity, which is the same principal II's service worker pulls as.
+const appActor = async () => {
+  const agent = await HttpAgent.create({
+    host: hostUrlEl.value,
+    identity: delegationIdentity,
+    shouldFetchRootKey: true,
+  });
+  return Actor.createActor(idlFactory, {
+    agent,
+    canisterId: Principal.fromText(readCanisterId()),
+  });
+};
+
+const optional = <T,>(value: T | undefined): [] | [T] =>
+  value === undefined ? [] : [value];
+
+sendBatchBtn.addEventListener("click", async () => {
+  const iiText = notificationCanisterIdEl.value.trim();
+  if (iiText === "") {
+    showError("Set the II backend canister id first.");
+    return;
+  }
+  sendBatchResponseEl.innerText = "Sending...";
+  try {
+    const expiresIn = sendExpiresInEl.value.trim();
+    const urgency = sendUrgencyEl.value;
+    const fixedId = sendFixedIdEl.value.trim();
+    const actor = await appActor();
+    const result = (await actor.send_notifications(
+      Principal.fromText(iiText),
+      recipientPrincipal(),
+      window.location.origin,
+      [
+        {
+          count: optional(Number(sendCountEl.value) || 1),
+          urgency: optional(urgency === "" ? undefined : urgency),
+          expires_in_secs: optional(
+            expiresIn === "" ? undefined : BigInt(expiresIn),
+          ),
+          fixed_id: optional(fixedId === "" ? undefined : fixedId),
+        },
+      ],
+    )) as string;
+    sendBatchResponseEl.innerText = result;
+  } catch (err) {
+    sendBatchResponseEl.innerText = `Failed: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+  }
+});
+
+const renderPending = async () => {
+  const actor = await appActor();
+  const pending = (await actor.ii_pending_notifications()) as {
+    id: Uint8Array | number[];
+    title: string;
+    body: string;
+    url: [] | [string];
+    created_at: bigint;
+  }[];
+  pendingResponseEl.innerText =
+    pending.length === 0
+      ? "nothing pending"
+      : pending
+          .map((n) => {
+            // The subject is stored as the id's bytes; the test app always
+            // queues it from text, so decode it back for display.
+            const subject = new TextDecoder().decode(Uint8Array.from(n.id));
+            const body = n.body ? ` — ${n.body}` : "";
+            const link = n.url[0] ? ` (${n.url[0]})` : "";
+            return `${subject}: ${n.title}${body}${link}`;
+          })
+          .join("\n");
+  pendingCountEl.innerText = pending.length === 0 ? "" : `${pending.length}`;
+};
+
+const withPending = (action: (actor: any) => Promise<unknown>) => async () => {
+  if (delegationIdentity === undefined) {
+    showError("Sign in first — pending notifications are per-principal.");
+    return;
+  }
+  pendingResponseEl.innerText = "Working...";
+  try {
+    await action(await appActor());
+    await renderPending();
+  } catch (err) {
+    pendingResponseEl.innerText = `Failed: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+  }
+};
+
+addPendingBtn.addEventListener(
+  "click",
+  withPending((actor) => {
+    const body = pendingBodyEl.value.trim();
+    const url = pendingUrlEl.value.trim();
+    return actor.add_pending_notification(
+      pendingIdEl.value.trim(),
+      pendingTitleEl.value.trim(),
+      optional(body === "" ? undefined : body),
+      optional(url === "" ? undefined : url),
+    );
+  }),
+);
+removePendingBtn.addEventListener(
+  "click",
+  withPending((actor) =>
+    actor.remove_pending_notification(pendingIdEl.value.trim()),
+  ),
+);
+clearPendingBtn.addEventListener(
+  "click",
+  withPending((actor) => actor.clear_pending_notifications()),
+);
+listPendingBtn.addEventListener(
+  "click",
+  withPending(() => Promise.resolve()),
+);
 
 whoamiBtn.addEventListener("click", async () => {
   const canisterId = Principal.fromText(readCanisterId());
@@ -979,3 +1262,117 @@ ReactDOM.createRoot(document.getElementById("root-vc-flow")!).render(
     <App />
   </React.StrictMode>,
 );
+
+// --- shell chrome -----------------------------------------------------------
+// Mark the nav entry whose panel the fragment selects.
+const markCurrentNav = () => {
+  const hash = window.location.hash;
+  document.querySelectorAll("nav a").forEach((a) => {
+    const href = a.getAttribute("href") ?? "";
+    a.classList.toggle("current", href !== "#" && href === hash);
+  });
+};
+window.addEventListener("hashchange", markCurrentNav);
+markCurrentNav();
+
+// The session lives in a drawer rather than a column, so a long delegation
+// never stretches the page. It is moved off-canvas by transform, not hidden:
+// every readout in it is read with innerText, which is empty for a
+// display:none element, so it must stay rendered whether open or shut.
+const sessionRail = document.getElementById("sessionRail");
+const sessionScrim = document.getElementById("sessionScrim");
+const sessionBtn = document.getElementById("sessionBtn");
+const sessionClose = document.getElementById("sessionClose");
+
+const setDrawer = (open: boolean) => {
+  sessionRail?.setAttribute("data-open", String(open));
+  // The page gives up the drawer's width rather than being covered by it.
+  document.body.setAttribute("data-drawer", open ? "open" : "closed");
+  sessionScrim?.setAttribute("data-open", String(open));
+  sessionBtn?.setAttribute("aria-expanded", String(open));
+  // Tab filtering starts with the first human opening, never on load, so the
+  // untouched page keeps every readout rendered for automation.
+  if (open && sessionRail?.getAttribute("data-tabs") === null) {
+    sessionRail.setAttribute("data-tabs", "delegation");
+  }
+};
+sessionBtn?.addEventListener("click", () =>
+  setDrawer(sessionRail?.getAttribute("data-open") !== "true"),
+);
+sessionClose?.addEventListener("click", () => setDrawer(false));
+sessionScrim?.addEventListener("click", () => setDrawer(false));
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") setDrawer(false);
+});
+
+// The button doubles as the connection indicator.
+const sessionBtnText = document.getElementById("sessionBtnText");
+const reflectConnection = () => {
+  const principal = principalEl?.innerText.trim() ?? "";
+  const connected = principal !== "";
+  sessionBtn?.setAttribute("data-connected", String(connected));
+  if (sessionBtnText !== null) {
+    sessionBtnText.innerText = connected
+      ? `${principal.slice(0, 5)}…${principal.slice(-3)}`
+      : "Not connected";
+  }
+};
+if (principalEl !== null) {
+  new MutationObserver(reflectConnection).observe(principalEl, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+}
+reflectConnection();
+
+document
+  .querySelectorAll<HTMLButtonElement>(".segmented button")
+  .forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document
+        .querySelectorAll(".segmented button")
+        .forEach((other) =>
+          other.setAttribute("aria-selected", String(other === tab)),
+        );
+      sessionRail?.setAttribute("data-tabs", tab.dataset.seg ?? "delegation");
+    });
+  });
+
+// Theme follows the system until someone picks one, which sticks per browser.
+const THEME_KEY = "ii-test-app-theme";
+const themeBtn = document.getElementById("themeBtn");
+const themeBtnText = document.getElementById("themeBtnText");
+const applyTheme = (theme: string | null) => {
+  if (theme === "light" || theme === "dark") {
+    document.documentElement.setAttribute("data-theme", theme);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  if (themeBtnText !== null) {
+    themeBtnText.innerText =
+      theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System";
+  }
+};
+let storedTheme: string | null = null;
+try {
+  storedTheme = localStorage.getItem(THEME_KEY);
+} catch {
+  // A private window simply forgets the preference.
+}
+applyTheme(storedTheme);
+themeBtn?.addEventListener("click", () => {
+  const next =
+    document.documentElement.getAttribute("data-theme") === "dark"
+      ? "light"
+      : document.documentElement.getAttribute("data-theme") === "light"
+        ? null
+        : "dark";
+  applyTheme(next);
+  try {
+    if (next === null) localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, next);
+  } catch {
+    // Not worth interrupting the page for.
+  }
+});
