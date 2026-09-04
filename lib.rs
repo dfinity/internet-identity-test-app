@@ -157,14 +157,18 @@ async fn send_notifications(
 }
 
 /// One notification this app has pending for a caller, in the shape II's
-/// service worker pulls. `id` becomes the on-screen notification's tag, so
-/// re-adding an id replaces that notification instead of adding another, and
-/// dropping an id closes it on every device at the next pull.
+/// service worker pulls (`id: blob; title; body; url; created_at`). `id` becomes
+/// the on-screen notification's tag, so re-adding an id replaces that
+/// notification instead of adding another, and dropping an id closes it on every
+/// device at the next pull. `url` is an optional deep link the worker opens on a
+/// click; `created_at` is when the content was queued.
 #[derive(CandidType, Deserialize, Clone)]
 struct PendingNotification {
-    id: String,
+    id: ByteBuf,
     title: String,
-    body: Option<String>,
+    body: String,
+    url: Option<String>,
+    created_at: u64,
 }
 
 thread_local! {
@@ -193,11 +197,23 @@ fn ii_pending_notifications() -> Vec<PendingNotification> {
 }
 
 /// Queues a notification for the caller, replacing any with the same `id` — the
-/// same thing a second add of one id does on screen.
+/// same thing a second add of one id does on screen. The `id` is given as text
+/// for convenience and stored as its bytes, the same blob the ping carries.
 #[update]
-fn add_pending_notification(id: String, title: String, body: Option<String>) -> u32 {
+fn add_pending_notification(
+    id: String,
+    title: String,
+    body: Option<String>,
+    url: Option<String>,
+) -> u32 {
     with_pending(api::msg_caller(), |pending| {
-        let entry = PendingNotification { id, title, body };
+        let entry = PendingNotification {
+            id: ByteBuf::from(id.into_bytes()),
+            title,
+            body: body.unwrap_or_default(),
+            url,
+            created_at: api::time(),
+        };
         match pending.iter().position(|existing| existing.id == entry.id) {
             Some(index) => pending[index] = entry,
             None => pending.push(entry),
@@ -210,8 +226,9 @@ fn add_pending_notification(id: String, title: String, body: Option<String>) -> 
 /// pull.
 #[update]
 fn remove_pending_notification(id: String) -> u32 {
+    let id = id.into_bytes();
     with_pending(api::msg_caller(), |pending| {
-        pending.retain(|existing| existing.id != id);
+        pending.retain(|existing| existing.id.as_ref() != id.as_slice());
         pending.len() as u32
     })
 }

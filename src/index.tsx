@@ -63,6 +63,7 @@ const pendingTitleEl = document.getElementById(
 const pendingBodyEl = document.getElementById(
   "pendingBody",
 ) as HTMLInputElement;
+const pendingUrlEl = document.getElementById("pendingUrl") as HTMLInputElement;
 const addPendingBtn = document.getElementById(
   "addPendingBtn",
 ) as HTMLButtonElement;
@@ -268,16 +269,18 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
       [
         IDL.Vec(
           IDL.Record({
-            id: IDL.Text,
+            id: IDL.Vec(IDL.Nat8),
             title: IDL.Text,
-            body: IDL.Opt(IDL.Text),
+            body: IDL.Text,
+            url: IDL.Opt(IDL.Text),
+            created_at: IDL.Nat64,
           }),
         ),
       ],
       ["query"],
     ),
     add_pending_notification: IDL.Func(
-      [IDL.Text, IDL.Text, IDL.Opt(IDL.Text)],
+      [IDL.Text, IDL.Text, IDL.Opt(IDL.Text), IDL.Opt(IDL.Text)],
       [IDL.Nat32],
       [],
     ),
@@ -938,17 +941,24 @@ sendBatchBtn.addEventListener("click", async () => {
 const renderPending = async () => {
   const actor = await appActor();
   const pending = (await actor.ii_pending_notifications()) as {
-    id: string;
+    id: Uint8Array | number[];
     title: string;
-    body: [] | [string];
+    body: string;
+    url: [] | [string];
+    created_at: bigint;
   }[];
   pendingResponseEl.innerText =
     pending.length === 0
       ? "nothing pending"
       : pending
-          .map(
-            (n) => `${n.id}: ${n.title}${n.body[0] ? ` — ${n.body[0]}` : ""}`,
-          )
+          .map((n) => {
+            // The subject is stored as the id's bytes; the test app always
+            // queues it from text, so decode it back for display.
+            const subject = new TextDecoder().decode(Uint8Array.from(n.id));
+            const body = n.body ? ` — ${n.body}` : "";
+            const link = n.url[0] ? ` (${n.url[0]})` : "";
+            return `${subject}: ${n.title}${body}${link}`;
+          })
           .join("\n");
   pendingCountEl.innerText = pending.length === 0 ? "" : `${pending.length}`;
 };
@@ -973,10 +983,12 @@ addPendingBtn.addEventListener(
   "click",
   withPending((actor) => {
     const body = pendingBodyEl.value.trim();
+    const url = pendingUrlEl.value.trim();
     return actor.add_pending_notification(
       pendingIdEl.value.trim(),
       pendingTitleEl.value.trim(),
       optional(body === "" ? undefined : body),
+      optional(url === "" ? undefined : url),
     );
   }),
 );

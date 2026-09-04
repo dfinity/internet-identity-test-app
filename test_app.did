@@ -33,9 +33,11 @@ type SendOptions = record {
 };
 
 type PendingNotification = record {
-    id : text;                    // becomes the on-screen notification's tag
+    id : blob;                    // becomes the on-screen notification's tag
     title : text;
-    body : opt text;
+    body : text;
+    url : opt text;               // optional deep link opened on click
+    created_at : nat64;           // ns; when the content was queued
 };
 
 type CallerAttributes = record {
@@ -86,7 +88,7 @@ service : (opt InitArg) -> {
   ii_pending_notifications: () -> (vec PendingNotification) query;
   /// Queues a notification for the caller, replacing any with the same id.
   /// Returns how many are now pending.
-  add_pending_notification: (id: text, title: text, body: opt text) -> (nat32);
+  add_pending_notification: (id: text, title: text, body: opt text, url: opt text) -> (nat32);
   /// Drops one pending notification. Returns how many remain.
   remove_pending_notification: (id: text) -> (nat32);
   clear_pending_notifications: () -> (nat32);
