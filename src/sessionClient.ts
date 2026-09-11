@@ -51,6 +51,13 @@ export interface StorageChoice {
    */
   iiUrl: string;
   iiCanisterId: string;
+  /**
+   * The replica the page calls. Kept here with the provider for the same
+   * reason: the redirect callback is a separate load with no form to read, and
+   * off mainnet the root key has to be fetched or every certificate fails
+   * verification.
+   */
+  hostUrl: string;
   useIcrc25: boolean;
   /** False asks for an ICRC-34 app delegation instead of a session. */
   useSession: boolean;
@@ -63,6 +70,7 @@ const DEFAULT_CHOICE: StorageChoice = {
   maxIdleMinutes: "",
   iiUrl: "",
   iiCanisterId: "",
+  hostUrl: "",
   // Matches the `checked` attribute in index.html, which is there so the box is
   // right before this code runs. This is what applies it from then on, so the two
   // have to agree.
@@ -186,6 +194,8 @@ export interface ProviderParams {
   authorizeUrl?: string;
   canisterId?: string;
   derivationOrigin?: string;
+  /** The transport the page is set to, so every client it builds uses it. */
+  transport?: "window" | "redirect";
   /**
    * How the client should reach the network it mints against. Needed off
    * mainnet: the agent it builds defaults to not fetching the root key, so
@@ -322,6 +332,7 @@ export const mountSessionPanel = (options: {
     cookieDomain: control("sessionCookieDomain")?.value.trim() ?? "",
     iiUrl: control("iiUrl")?.value.trim() ?? "",
     iiCanisterId: control("iiCanisterId")?.value.trim() ?? "",
+    hostUrl: control("hostUrl")?.value.trim() ?? "",
     useIcrc25: control("useIcrc25")?.checked === true,
     useSession: control("useSession")?.checked === true,
   });
@@ -378,15 +389,14 @@ export const mountSessionPanel = (options: {
 
   const render = () => {
     const status = handle.client.getStatus();
-    // The record itself, rather than what the client makes of it: a sibling reads
-    // the same bytes and derives `held` per origin, so this is what shows a shared
-    // sign-in this origin cannot yet act with. The session chain is no longer here
-    // — it lives in the credential store — so the expiry comes off the record.
-    const record = handle.stateStorage.get();
+    // From the status rather than the store: it carries the expiry in every case
+    // a record exists, and which key a store answers for is the client's to
+    // know. `signed-in-elsewhere` is still visible here — that is a shared
+    // sign-in this origin cannot yet act with.
     const sessionExpiryMs =
-      record === null
+      status.status === "signed-out"
         ? undefined
-        : Number(record.expiration / BigInt(1_000_000));
+        : Number(status.expiration / BigInt(1_000_000));
 
     // Four cases the library orders for us, rather than a boolean this page
     // would have to interpret. `signed-in-elsewhere` is the one worth seeing:
@@ -419,7 +429,7 @@ export const mountSessionPanel = (options: {
       chain !== undefined && chain.delegations.length > 0 ? chain : undefined;
     setText(
       "delegationExpiry",
-      record === null
+      status.status === "signed-out"
         ? "-"
         : delegation === undefined
           ? "none held"
@@ -451,11 +461,15 @@ export const mountSessionPanel = (options: {
 
     setText(
       "sessionHint",
-      record === null
+      status.status === "signed-out"
         ? "none"
-        : `${shortPrincipal(record.principal)} until ${new Date(
+        : `${shortPrincipal(status.principal)} until ${new Date(
             sessionExpiryMs ?? 0,
-          ).toISOString()}${record.held ? "" : " (not held here)"}`,
+          ).toISOString()}${
+            // `signed-in-elsewhere` is the record naming a sign-in this origin
+            // holds nothing for, which is what `held: false` used to say.
+            status.status === "signed-in-elsewhere" ? " (not held here)" : ""
+          }`,
     );
     // What the client actually sends, which is the option where one is set and the
     // store's own answer otherwise — not the store's answer alone, or forcing it off
@@ -487,12 +501,12 @@ export const mountSessionPanel = (options: {
     render();
   };
 
-  // The state store is what announces a change now, not the client: a sign-out in
-  // another tab, or a sibling publishing a sign-in, both land as a state change.
-  // A store whose medium cannot report one implements nothing, hence the `?.`.
+  // The client announces it: a sign-out in another tab, a sibling publishing a
+  // sign-in, or a peer client on this page re-issuing silently all land as the
+  // record changing under it.
   const listen = (h: SessionClientHandle) =>
-    h.stateStorage.subscribe?.(() => {
-      log("the state store reported a change");
+    h.client.subscribe(() => {
+      log("the client reported the record changing");
       void refresh();
     });
   let unsubscribe = listen(handle);
@@ -520,6 +534,7 @@ export const mountSessionPanel = (options: {
   for (const id of [
     "iiUrl",
     "iiCanisterId",
+    "hostUrl",
     "derivationOrigin",
     "sessionCookieDomain",
     "sessionMaxIdle",
@@ -540,6 +555,7 @@ export const mountSessionPanel = (options: {
   for (const id of [
     "iiUrl",
     "iiCanisterId",
+    "hostUrl",
     "derivationOrigin",
     "sessionCookieDomain",
     "stateStorageLocal",
@@ -614,8 +630,12 @@ export const mountSessionPanel = (options: {
   // `prompt` and `hint` are baked into the authorize URL at construction, so a
   // silent re-issue is its own client sharing this one's storage.
   onClick("sessionSilentBtn", async () => {
-    // The record names the account to re-issue for, whichever store holds it.
-    const hint = handle.stateStorage.get()?.principal;
+    // The account to re-issue for, from the client rather than its store:
+    // `getStatus` carries the principal in every case a record exists, where
+    // `getPrincipal` answers nothing for one that has expired — which is exactly
+    // when a re-issue is wanted.
+    const status = handle.client.getStatus();
+    const hint = status.status === "signed-out" ? undefined : status.principal;
     log(
       `silent re-auth requested${
         hint === undefined
@@ -624,6 +644,9 @@ export const mountSessionPanel = (options: {
       }`,
     );
     const silent = new AuthClient({
+      // The page's transport, so a redirect-mode test exercises the redirect
+      // path here too rather than silently falling back to a window.
+      transport: handle.params.transport,
       identityProvider: {
         authorizeUrl:
           handle.params.authorizeUrl === ""

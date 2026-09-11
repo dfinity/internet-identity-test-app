@@ -32,12 +32,25 @@ const run = async (): Promise<void> => {
   const queryInputs = inputsFromSnapshot(
     decodeSnapshot(window.location.search),
   );
+  // The provider and the replica come from the stored choice first, and from the
+  // query only as a fallback. On the return load the query is gone — the
+  // callback URL carries none by construction — and a client built without them
+  // falls back to mainnet: the minter would be built for the mainnet Internet
+  // Identity, which refuses the session chain the configured one signed.
+  const choice = readStorageChoice();
   const { client: authClient } = createSessionClient({
     transport: "redirect",
-    authorizeUrl: queryInputs.iiUrl,
-    canisterId: queryInputs.iiCanisterId,
+    authorizeUrl: choice.iiUrl !== "" ? choice.iiUrl : queryInputs.iiUrl,
+    canisterId:
+      choice.iiCanisterId !== ""
+        ? choice.iiCanisterId
+        : queryInputs.iiCanisterId,
     derivationOrigin: queryInputs.derivationOrigin,
-    choice: readStorageChoice(),
+    agentOptions: {
+      host: choice.hostUrl !== "" ? choice.hostUrl : undefined,
+      shouldFetchRootKey: true,
+    },
+    choice,
   });
 
   // Journal the whole form snapshot so it stays stable across the redirect and
@@ -59,8 +72,16 @@ const run = async (): Promise<void> => {
     const wantsAttributes =
       inputs.requestAttributes && inputs.attributeKeys.length > 0;
 
+    // The idle bound is a property of the session, so the redirect path honours
+    // the panel's setting exactly as the window path does.
+    const maxIdleMinutes = Number(choice.maxIdleMinutes);
+    const maxTimeToIdle =
+      Number.isFinite(maxIdleMinutes) && maxIdleMinutes > 0
+        ? BigInt(Math.floor(maxIdleMinutes)) * BigInt(60_000_000_000)
+        : undefined;
+
     const [, attributes] = await Promise.all([
-      authClient.signIn({ maxTimeToLive }),
+      authClient.signIn({ maxTimeToLive, maxTimeToIdle }),
       wantsAttributes
         ? authClient.requestAttributes({
             keys: inputs.attributeKeys,

@@ -244,6 +244,8 @@ const updateDelegationView = ({
     ).toString();
 
     // Display certified attributes if available.
+    // Stashed so the canister round-trip button can consume it.
+    latestIcrc3Attributes = icrc3Attributes;
     canisterEchoedAttributesEl.innerText = "";
     if (icrc3Attributes !== undefined) {
       icrc3AttributesEl.innerText = JSON.stringify({
@@ -474,6 +476,10 @@ const init = async () => {
     readProvider: () => ({
       authorizeUrl: iiUrlEl.value,
       canisterId: iiCanisterIdEl.value.trim(),
+      // What the page is set to, so the panel's own client and the silent
+      // re-auth client are both built with it rather than falling back to the
+      // window transport.
+      transport: transportEl.value === "redirect" ? "redirect" : "window",
       derivationOrigin:
         derivationOriginEl.value !== "" ? derivationOriginEl.value : undefined,
       // The host field is what the rest of this page calls, and off mainnet the
