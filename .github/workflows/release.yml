@@ -4,10 +4,17 @@ name: Release
 # consumes. The tag it reads lives in `.github/versions/test-app` in the
 # internet-identity repo. Releases are dated rather than versioned: they are
 # consumed by II, not published to a registry.
+#
+# `prerelease-<year>-<month>-<day>` publishes the same assets marked as a GitHub
+# pre-release. That matters because II's `update-test-app` finds a new version
+# through `/releases/latest`, which is by definition the latest release that is
+# *not* a pre-release: a test app needing an unreleased II can be pinned by hand
+# without the bot moving II's main onto it.
 on:
   push:
     tags:
       - "release-*"
+      - "prerelease-*"
 
 permissions:
   contents: write
@@ -48,9 +55,14 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          prerelease=()
+          case "$TAG" in
+            prerelease-*) prerelease=(--prerelease) ;;
+          esac
           gh release create "$TAG" \
             --title "$TAG" \
             --generate-notes \
+            "${prerelease[@]}" \
             test_app.wasm \
             test_app.wasm.sha256 \
             test_app.did \

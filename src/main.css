@@ -65,6 +65,41 @@ input {
   border-bottom: 1px solid black;
 }
 
+/* The rules above describe a text field, and a radio stretched to the full row
+   pushes its own text onto the next line. These two are glyphs beside a label,
+   so they take their own size and carry no underline. */
+input[type="radio"],
+input[type="checkbox"] {
+  min-width: 0;
+  width: auto;
+  border-bottom: 0;
+  vertical-align: middle;
+}
+
+label:has(> input[type="radio"]),
+label:has(> input[type="checkbox"]) {
+  display: inline-block;
+  margin-right: 1em;
+}
+
+/* The options of one radio group, beside the label that names them. Their own
+   box, so every option stays on the same left edge instead of tucking under the
+   group's label when the line runs out. */
+.options {
+  display: inline-block;
+  vertical-align: top;
+  max-width: calc(100% - 210px);
+}
+
+/* One per line: a group of four wrapping two-then-two reads as two groups. The
+   selector matches the inline-block rule above on specificity, so it has to be
+   at least as specific to win. */
+.options > label:has(> input[type="radio"]),
+.options > label:has(> input[type="checkbox"]) {
+  display: block;
+  margin-right: 0;
+}
+
 button {
   display: block;
   min-width: 100%;
