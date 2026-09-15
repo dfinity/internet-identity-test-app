@@ -527,12 +527,11 @@ const init = async () => {
       return;
     }
 
+    // Blank leaves the provider's own default, the same as the idle bound below
+    // and as the redirect path does with this field.
     const maxTimeToLive_ = BigInt(maxTimeToLiveEl.value);
-    // The default max TTL set in the @icp-sdk/auth/client library
-    const authClientDefaultMaxTTL =
-      /* hours */ BigInt(8) * /* nanoseconds */ BigInt(3_600_000_000_000);
     const maxTimeToLive =
-      maxTimeToLive_ > BigInt(0) ? maxTimeToLive_ : authClientDefaultMaxTTL;
+      maxTimeToLive_ > BigInt(0) ? maxTimeToLive_ : undefined;
     // The panel owns this one, since it is a property of the session rather than
     // of this form. Blank leaves the provider's own default.
     const maxIdleMinutes = Number(readStorageChoice().maxIdleMinutes);

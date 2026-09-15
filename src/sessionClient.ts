@@ -228,6 +228,21 @@ const credentialStorageFor = (choice: StorageChoice): CredentialStorage => {
   }
 };
 
+/**
+ * The provider as the client takes it: both halves, or neither. Nothing about
+ * the canister is derived from the URL, so a form with one field filled names
+ * half a deployment and the client refuses it.
+ */
+const identityProviderFor = (
+  params: ProviderParams,
+): { authorizeUrl: string; canisterId: string } | undefined => {
+  const authorizeUrl = params.authorizeUrl ?? "";
+  const canisterId = params.canisterId ?? "";
+  return authorizeUrl === "" || canisterId === ""
+    ? undefined
+    : { authorizeUrl, canisterId };
+};
+
 export const createSessionClient = (
   params: SessionClientParams,
 ): SessionClientHandle => {
@@ -235,16 +250,7 @@ export const createSessionClient = (
   const credentialStorage = credentialStorageFor(params.choice);
 
   const client = new AuthClient({
-    identityProvider: {
-      authorizeUrl:
-        params.authorizeUrl === undefined || params.authorizeUrl === ""
-          ? undefined
-          : params.authorizeUrl,
-      canisterId:
-        params.canisterId === undefined || params.canisterId === ""
-          ? undefined
-          : params.canisterId,
-    },
+    identityProvider: identityProviderFor(params),
     derivationOrigin: params.derivationOrigin,
     transport: params.transport,
     agentOptions: params.agentOptions,
@@ -261,11 +267,12 @@ export const createSessionClient = (
 /**
  * Renders the client's state, and notices the delegation being replaced.
  *
- * A mint is not announced: `onMinted` is internal to AuthClient and `subscribe`
- * does not fire for it, so a replacement is found by comparing the delegation's
- * expiry rather than reported by the library. The log therefore states what it
- * can see (the delegation changed, and when) alongside what this page itself did,
- * and never guesses which of the two caused the other.
+ * A mint is not announced: `subscribe` covers who is signed in, and a rotation
+ * of the app delegation is deliberately outside it, so a replacement is found by
+ * comparing the delegation's expiry rather than reported by the library. The log
+ * therefore states what it can see (the delegation changed, and when) alongside
+ * what this page itself did, and never guesses which of the two caused the
+ * other.
  */
 export const mountSessionPanel = (options: {
   /** Read live, so an edit to the provider fields takes effect on the next build. */
@@ -394,22 +401,20 @@ export const mountSessionPanel = (options: {
     // know. `signed-in-elsewhere` is still visible here — that is a shared
     // sign-in this origin cannot yet act with.
     const sessionExpiryMs =
-      status.status === "signed-out"
-        ? undefined
-        : Number(status.expiration / BigInt(1_000_000));
+      status.state === "signed-out" ? undefined : status.expiresAtMs;
 
     // Four cases the library orders for us, rather than a boolean this page
     // would have to interpret. `signed-in-elsewhere` is the one worth seeing:
     // a sibling holds the sign-in and this origin has no credential for it yet.
     setText(
       "sessionState",
-      status.status === "signed-out" && options.appIdentity?.() !== undefined
+      status.state === "signed-out" && options.appIdentity?.() !== undefined
         ? "signed in without a session — the legacy protocol path does not create one"
-        : status.status,
+        : status.state,
     );
     setText(
       "sessionAccountPrincipal",
-      status.status === "signed-out" ? "-" : status.principal.toText(),
+      status.state === "signed-out" ? "-" : status.principal.toText(),
     );
     setText(
       "sessionExpiry",
@@ -429,7 +434,7 @@ export const mountSessionPanel = (options: {
       chain !== undefined && chain.delegations.length > 0 ? chain : undefined;
     setText(
       "delegationExpiry",
-      status.status === "signed-out"
+      status.state === "signed-out"
         ? "-"
         : delegation === undefined
           ? "none held"
@@ -461,14 +466,14 @@ export const mountSessionPanel = (options: {
 
     setText(
       "sessionHint",
-      status.status === "signed-out"
+      status.state === "signed-out"
         ? "none"
         : `${shortPrincipal(status.principal)} until ${new Date(
             sessionExpiryMs ?? 0,
           ).toISOString()}${
             // `signed-in-elsewhere` is the record naming a sign-in this origin
             // holds nothing for, which is what `held: false` used to say.
-            status.status === "signed-in-elsewhere" ? " (not held here)" : ""
+            status.state === "signed-in-elsewhere" ? " (not held here)" : ""
           }`,
     );
     // What the client actually sends, which is the option where one is set and the
@@ -635,7 +640,7 @@ export const mountSessionPanel = (options: {
     // `getPrincipal` answers nothing for one that has expired — which is exactly
     // when a re-issue is wanted.
     const status = handle.client.getStatus();
-    const hint = status.status === "signed-out" ? undefined : status.principal;
+    const hint = status.state === "signed-out" ? undefined : status.principal;
     log(
       `silent re-auth requested${
         hint === undefined
@@ -647,16 +652,7 @@ export const mountSessionPanel = (options: {
       // The page's transport, so a redirect-mode test exercises the redirect
       // path here too rather than silently falling back to a window.
       transport: handle.params.transport,
-      identityProvider: {
-        authorizeUrl:
-          handle.params.authorizeUrl === ""
-            ? undefined
-            : handle.params.authorizeUrl,
-        canisterId:
-          handle.params.canisterId === ""
-            ? undefined
-            : handle.params.canisterId,
-      },
+      identityProvider: identityProviderFor(handle.params),
       derivationOrigin: handle.params.derivationOrigin,
       agentOptions: handle.params.agentOptions,
       stateStorage: handle.stateStorage,
