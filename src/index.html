@@ -794,6 +794,13 @@
             </div>
             <input type="checkbox" class="switch" id="useIcrc3Attributes" />
           </div>
+          <div class="opt">
+            <div class="txt">
+              <label for="useSession">Use session:</label>
+              <div class="sub">Take a session the app re-issues from</div>
+            </div>
+            <input type="checkbox" class="switch" id="useSession" checked />
+          </div>
         </div>
 
         <div class="h2row">
@@ -829,6 +836,132 @@
         <div class="actions">
           <button id="sendAttributesBtn">Send attributes to canister</button>
         </div>
+
+        <h2>Session model</h2>
+        <div class="actions">
+          <button id="sessionSignOutBtn">Sign out</button>
+          <button id="sessionRefreshBtn">Refresh now</button>
+          <button id="sessionOpenTabBtn">Open a second tab</button>
+          <button id="sessionSilentBtn">Silent re-auth</button>
+        </div>
+
+        <div class="h2row">
+          <h2>Storage</h2>
+          <span class="aside">where the session is kept</span>
+        </div>
+        <div class="field">
+          <label>State storage</label>
+        </div>
+        <div class="radios">
+          <span>
+            <input
+              type="radio"
+              id="stateStorageLocal"
+              name="stateStorageChoice"
+            />
+            <label for="stateStorageLocal">localStorage</label>
+          </span>
+          <span>
+            <input
+              type="radio"
+              id="stateStorageCookie"
+              name="stateStorageChoice"
+            />
+            <label for="stateStorageCookie"
+              >cookie (shared with siblings)</label
+            >
+          </span>
+          <span>
+            <input
+              type="radio"
+              id="stateStorageMemory"
+              name="stateStorageChoice"
+            />
+            <label for="stateStorageMemory">memory</label>
+          </span>
+        </div>
+        <div class="fields">
+          <div class="field">
+            <label for="sessionCookieDomain">Cookie domain</label>
+            <input
+              type="text"
+              id="sessionCookieDomain"
+              placeholder="e.g. example.com (this host or one above it)"
+            />
+          </div>
+        </div>
+        <div class="field">
+          <label>Credential storage</label>
+        </div>
+        <div class="radios">
+          <span>
+            <input
+              type="radio"
+              id="credentialStorageIdb"
+              name="credentialStorageChoice"
+            />
+            <label for="credentialStorageIdb">IndexedDB</label>
+          </span>
+          <span>
+            <input
+              type="radio"
+              id="credentialStorageLocal"
+              name="credentialStorageChoice"
+            />
+            <label for="credentialStorageLocal">localStorage</label>
+          </span>
+          <span>
+            <input
+              type="radio"
+              id="credentialStorageMemory"
+              name="credentialStorageChoice"
+            />
+            <label for="credentialStorageMemory">memory</label>
+          </span>
+          <span>
+            <input
+              type="radio"
+              id="credentialStorageShared"
+              name="credentialStorageChoice"
+            />
+            <label for="credentialStorageShared"
+              >shared memory (across tabs)</label
+            >
+          </span>
+        </div>
+        <div class="field">
+          <label>Resumable</label>
+        </div>
+        <div class="radios">
+          <span>
+            <input type="radio" id="resumableDefault" name="resumableChoice" />
+            <label for="resumableDefault">whatever the store says</label>
+          </span>
+          <span>
+            <input type="radio" id="resumableOn" name="resumableChoice" />
+            <label for="resumableOn">force on</label>
+          </span>
+          <span>
+            <input type="radio" id="resumableOff" name="resumableChoice" />
+            <label for="resumableOff">force off</label>
+          </span>
+        </div>
+        <div class="fields">
+          <div class="field">
+            <label for="sessionMaxIdle">Max idle (minutes)</label>
+            <input
+              type="text"
+              id="sessionMaxIdle"
+              placeholder="blank = the provider's default, currently 7 days"
+            />
+          </div>
+        </div>
+
+        <div class="h2row">
+          <h2>Log</h2>
+          <span class="aside">session events</span>
+        </div>
+        <pre id="sessionLog"></pre>
       </section>
 
       <section id="card-send">
@@ -1140,6 +1273,60 @@
           <span class="v" id="expiration"></span>
           <span class="ph">—</span>
           <button class="copy" data-copy="expiration">copy</button>
+        </div>
+      </div>
+      <div class="readout">
+        <label for="sessionState">Session state</label>
+        <div class="shell">
+          <span class="v" id="sessionState"></span>
+          <span class="ph">—</span>
+        </div>
+      </div>
+      <div class="readout">
+        <label for="sessionAccountPrincipal">Account principal</label>
+        <div class="shell">
+          <span
+            class="v"
+            data-role="account-principal"
+            id="sessionAccountPrincipal"
+          ></span>
+          <span class="ph">—</span>
+          <button class="copy" data-copy="sessionAccountPrincipal">copy</button>
+        </div>
+      </div>
+      <div class="readout">
+        <label for="sessionExpiry">Session expires in</label>
+        <div class="shell">
+          <span class="v" id="sessionExpiry"></span>
+          <span class="ph">—</span>
+        </div>
+      </div>
+      <div class="readout">
+        <label for="delegationExpiry">App delegation expires in</label>
+        <div class="shell">
+          <span class="v" id="delegationExpiry"></span>
+          <span class="ph">—</span>
+        </div>
+      </div>
+      <div class="readout">
+        <label for="delegationChanges">Delegation replacements observed</label>
+        <div class="shell">
+          <span class="v" id="delegationChanges"></span>
+          <span class="ph">—</span>
+        </div>
+      </div>
+      <div class="readout">
+        <label for="sessionHint">Stored state record</label>
+        <div class="shell">
+          <span class="v" id="sessionHint"></span>
+          <span class="ph">—</span>
+        </div>
+      </div>
+      <div class="readout">
+        <label for="sessionResumable">Resumable</label>
+        <div class="shell">
+          <span class="v" id="sessionResumable"></span>
+          <span class="ph">—</span>
         </div>
       </div>
 
