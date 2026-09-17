@@ -632,6 +632,21 @@ export const mountSessionPanel = (options: {
     window.open(window.location.href, "_blank", "noopener");
   });
 
+  // Its own request rather than part of sign-in, so it can be asked once the
+  // user is here and signed in. The answer is read out rather than logged alone
+  // because an app that was already allowed is told so without the user seeing
+  // a screen, and that case is otherwise invisible.
+  onClick("sessionNotifyBtn", async () => {
+    log("notification consent requested");
+    const granted = await handle.client.requestNotificationConsent();
+    setText("notificationConsent", granted ? "yes" : "no");
+    log(
+      granted
+        ? "notification consent granted, this browser is registered"
+        : "notification consent refused",
+    );
+  });
+
   // `prompt` and `hint` are baked into the authorize URL at construction, so a
   // silent re-issue is its own client sharing this one's storage.
   onClick("sessionSilentBtn", async () => {
