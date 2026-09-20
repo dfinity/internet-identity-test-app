@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["7FY8G6QYKD.org.internetcomputer.icpnative.example.ios"],
+        "components": [
+          { "/": "/ios-callback*", "comment": "ICRC-167 callback" },
+          { "/": "/ios-callback", "comment": "ICRC-167 callback exact" }
+        ]
+      }
+    ]
+  }
+}

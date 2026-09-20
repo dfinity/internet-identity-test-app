@@ -48,6 +48,14 @@ release assets of a pinned tag; see [Releases](#releases).
   It always covers this canister's own gateway origins; extra origins can be
   declared through the install argument (`auth_callbacks`), which is how the II
   e2e adds its `https://nice-name.com/callback` host.
+- Serves the two mobile deep-link association files, so a native app can prove
+  it owns this origin and the OS hands an ICRC-167 `callback` URL to the app
+  rather than to the browser:
+  - `/.well-known/assetlinks.json` — Android App Links
+  - `/.well-known/apple-app-site-association` — iOS Universal Links
+  - Both are static files under `src/public/.well-known/` and are served as
+    `application/json` with no redirect, which both verifiers require. The
+    Apple one has no extension, so `asset_util`'s `KNOWN_FILES` pins its type.
 
 ## Layout
 

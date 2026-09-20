@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.internetcomputer.icpnative.example.android",
+      "sha256_cert_fingerprints": [
+        "9C:DD:3D:77:62:07:BF:A6:77:09:9A:8F:2E:9B:2B:38:F7:86:18:2F:D2:C7:AB:40:A8:9B:40:2A:89:9D:38:0E"
+      ]
+    }
+  }
+]

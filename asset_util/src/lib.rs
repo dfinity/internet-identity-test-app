@@ -402,6 +402,9 @@ lazy_static! {
         map.insert(Path::new(".well-known/ic-domains").to_owned(), (ContentType::JSON, ContentEncoding::Identity));
         map.insert(Path::new(".well-known/webauthn").to_owned(), (ContentType::JSON, ContentEncoding::Identity));
         map.insert(Path::new(".well-known/ii-alternative-origins").to_owned(), (ContentType::JSON, ContentEncoding::Identity));
+        // Apple requires the iOS Universal Links association file at this exact
+        // extensionless path, served as application/json.
+        map.insert(Path::new(".well-known/apple-app-site-association").to_owned(), (ContentType::JSON, ContentEncoding::Identity));
         map
     };
 }
@@ -669,6 +672,16 @@ fn should_return_correct_extension() {
         ),
         (
             ".well-known/ii-alternative-origins",
+            ContentType::JSON,
+            ContentEncoding::Identity,
+        ),
+        (
+            ".well-known/apple-app-site-association",
+            ContentType::JSON,
+            ContentEncoding::Identity,
+        ),
+        (
+            ".well-known/assetlinks.json",
             ContentType::JSON,
             ContentEncoding::Identity,
         ),
