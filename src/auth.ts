@@ -44,6 +44,7 @@ export const authWithII = async ({
   useSession,
   requestAttributes,
   icrc3Nonce,
+  askNotificationConsent,
 }: {
   url: string;
   maxTimeToLive?: bigint;
@@ -67,10 +68,13 @@ export const authWithII = async ({
   useSession?: boolean;
   requestAttributes?: string[];
   icrc3Nonce?: Uint8Array;
+  /** Ask whether this app may notify the user, as part of this sign-in. */
+  askNotificationConsent?: boolean;
 }): Promise<{
   identity: DelegationIdentity;
   authnMethod: string;
   icrc3Attributes?: Icrc3Attributes;
+  notificationConsent?: boolean;
 }> => {
   // Authenticate via the ICRC-25 protocol
   if (useIcrc25) {
@@ -103,13 +107,20 @@ export const authWithII = async ({
 
     const nonce = icrc3Nonce ?? crypto.getRandomValues(new Uint8Array(32));
 
-    const [identity, icrc3Attributes] = await Promise.all([
+    // Alongside the sign-in rather than after it. The client closes the
+    // transport channel once nothing is in flight, and reopening it needs a
+    // click this continuation no longer has, so a request made after `signIn`
+    // resolves has no window left to reach.
+    const [identity, icrc3Attributes, notificationConsent] = await Promise.all([
       authClient.signIn({ maxTimeToLive, maxTimeToIdle }),
       hasAttributes
         ? authClient.requestAttributes({
             keys: requestAttributes,
             nonce: () => Promise.resolve(nonce),
           })
+        : Promise.resolve(undefined),
+      askNotificationConsent === true
+        ? authClient.requestNotificationConsent()
         : Promise.resolve(undefined),
     ]);
 
@@ -124,6 +135,7 @@ export const authWithII = async ({
       identity,
       authnMethod: "passkey",
       icrc3Attributes: icrc3Attributes ?? undefined,
+      notificationConsent,
     };
   }
 
