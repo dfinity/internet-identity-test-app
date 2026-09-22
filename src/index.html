@@ -94,6 +94,14 @@
           <input type="checkbox" id="useSession" checked />
         </div>
         <div>
+          <label
+            for="askNotificationConsent"
+            style="display: inline-block; width: 200px"
+            >Ask to notify after sign-in:</label
+          >
+          <input type="checkbox" id="askNotificationConsent" />
+        </div>
+        <div>
           <label for="icrc3Nonce" style="display: inline-block; width: 200px"
             >ICRC-3 nonce (base64):</label
           >
@@ -157,6 +165,8 @@
         <div id="sessionHint">none</div>
         <h3>Resumable (may the provider keep this sign-in?):</h3>
         <div id="sessionResumable">-</div>
+        <h3>May this app notify the user?</h3>
+        <div id="notificationConsent">not asked</div>
         <div>
           <button id="sessionSignOutBtn">
             Sign out (ends it at the canister)
@@ -164,6 +174,7 @@
           <button id="sessionRefreshBtn">Refresh now</button>
           <button id="sessionOpenTabBtn">Open a second tab</button>
           <button id="sessionSilentBtn">Silent re-auth (prompt=none)</button>
+          <button id="sessionNotifyBtn">Ask to notify</button>
         </div>
         <h3>Storage</h3>
         <div>

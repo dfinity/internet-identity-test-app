@@ -96,6 +96,9 @@ const allowPinAuthenticationEl = document.getElementById(
 ) as HTMLInputElement;
 const useIcrc25El = document.getElementById("useIcrc25") as HTMLInputElement;
 const useSessionEl = document.getElementById("useSession") as HTMLInputElement;
+const askNotificationConsentEl = document.getElementById(
+  "askNotificationConsent",
+) as HTMLInputElement;
 const transportEl = document.getElementById("transport") as HTMLSelectElement;
 const icrc3NonceEl = document.getElementById("icrc3Nonce") as HTMLInputElement;
 const requestAttributesEl = document.getElementById(
@@ -445,6 +448,14 @@ const restoreRedirectResultIfPresent = ():
   return { attributes: results.attributes };
 };
 
+const showNotificationConsent = (granted: boolean | undefined): void => {
+  const readout = document.getElementById("notificationConsent");
+  if (readout === null || granted === undefined) {
+    return;
+  }
+  readout.innerText = granted ? "yes" : "no";
+};
+
 const renderRedirectIdentity = async (
   handle: SessionClientHandle,
   results: { attributes?: { data: string; signature: string } },
@@ -463,6 +474,9 @@ const renderRedirectIdentity = async (
           }
         : undefined,
   });
+  if (askNotificationConsentEl.checked) {
+    showNotificationConsent(await handle.client.requestNotificationConsent());
+  }
 };
 
 const init = async () => {
@@ -555,6 +569,15 @@ const init = async () => {
         showError("the session client is not ready");
         return;
       }
+      if (
+        askNotificationConsentEl.checked &&
+        !(useIcrc25El.checked && useSessionEl.checked)
+      ) {
+        showError(
+          "Asking to notify needs ICRC-25 and a session. The legacy transport carries one request under a fixed id, and the ICRC-34 path closes its channel as soon as the delegation arrives.",
+        );
+        return;
+      }
       legacySignIn = !useIcrc25El.checked;
       const result = await authWithII({
         url: iiUrlEl.value,
@@ -576,8 +599,10 @@ const init = async () => {
           .split("\n")
           .map((s) => s.trim())
           .filter((s) => s.length > 0),
+        askNotificationConsent: askNotificationConsentEl.checked,
       });
       delegationIdentity = result.identity;
+      showNotificationConsent(result.notificationConsent);
       // `signIn` mints, but the identity can be replaced straight after by a
       // reconcile that holds nothing, and the only other trigger is the page
       // coming back to the foreground. Ask for one now instead.
