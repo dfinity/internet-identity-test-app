@@ -35,6 +35,30 @@ type CallerAttributes = record {
     data: blob;
 };
 
+type Member = record {
+    who: principal;
+    /// Joined or last sent, in nanoseconds since the epoch.
+    last_active: nat64;
+};
+
+type ChatMessage = record {
+    from: principal;
+    text: text;
+    at: nat64;
+};
+
+type Room = record {
+    members: vec Member;
+    messages: vec ChatMessage;
+};
+
+/// What the notification library serves to Internet Identity on a pull.
+type NotificationContent = record {
+    title: text;
+    body: text;
+    url: opt text;
+};
+
 type InitArg = record {
     /// Extra callback URLs added to the ICRC-167 auth-callback allow-list, on
     /// top of the canister's own gateway origins (e.g. a custom domain like the
@@ -55,4 +79,16 @@ service : (opt InitArg) -> {
   /// tests can verify the round-trip from II → frontend →
   /// `AttributeIdentity` → canister.
   caller_attributes: () -> (CallerAttributes);
+  /// Joins the one chatroom, or refreshes the caller's activity if they are
+  /// already in it. Returns whoever was evicted to make room: the room holds
+  /// 100 members, and a join beyond that drops whoever has been quiet longest.
+  chat_join: () -> (opt principal);
+  /// Posts a message and notifies everyone else in the room through Internet
+  /// Identity.
+  chat_send: (text) -> ();
+  chat_room: () -> (Room) query;
+  /// Called by Internet Identity, not by a client: the content of a
+  /// notification this canister sent, and the report that one was delivered.
+  _internet_identity_notification_content: (nat64) -> (opt NotificationContent) query;
+  _internet_identity_notification_received: (nat64) -> ();
 }

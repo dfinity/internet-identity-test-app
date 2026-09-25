@@ -62,6 +62,13 @@ const customMessageBtn = document.getElementById(
 ) as HTMLButtonElement;
 const messagesEl = document.getElementById("messages") as HTMLElement;
 const hostUrlEl = document.getElementById("hostUrl") as HTMLInputElement;
+const chatJoinBtn = document.getElementById("chatJoinBtn") as HTMLButtonElement;
+const chatSendBtn = document.getElementById("chatSendBtn") as HTMLButtonElement;
+const chatRefreshBtn = document.getElementById(
+  "chatRefreshBtn",
+) as HTMLButtonElement;
+const chatTextEl = document.getElementById("chatText") as HTMLInputElement;
+const chatRoomEl = document.getElementById("chatRoom") as HTMLPreElement;
 const whoAmIResponseEl = document.getElementById(
   "whoamiResponse",
 ) as HTMLDivElement;
@@ -174,6 +181,14 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     signer: IDL.Opt(IDL.Principal),
     data: IDL.Vec(IDL.Nat8),
   });
+  const Room = IDL.Record({
+    members: IDL.Vec(
+      IDL.Record({ who: IDL.Principal, last_active: IDL.Nat64 }),
+    ),
+    messages: IDL.Vec(
+      IDL.Record({ from: IDL.Principal, text: IDL.Text, at: IDL.Nat64 }),
+    ),
+  });
   return IDL.Service({
     http_request: IDL.Func([HttpRequest], [HttpResponse], ["query"]),
     update_alternative_origins: IDL.Func(
@@ -184,6 +199,9 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     update_app_metadata: IDL.Func([IDL.Text, AppMetadataMode], [], []),
     whoami: IDL.Func([], [IDL.Principal], ["query"]),
     caller_attributes: IDL.Func([], [CallerAttributes], []),
+    chat_join: IDL.Func([], [IDL.Opt(IDL.Principal)], []),
+    chat_send: IDL.Func([IDL.Text], [], []),
+    chat_room: IDL.Func([], [Room], ["query"]),
   });
 };
 
@@ -857,6 +875,53 @@ const currentIdentity = async (): Promise<Identity | undefined> => {
 const showError = (err: string) => {
   alert(err);
 };
+
+const testAppActor = async () => {
+  const agent = await HttpAgent.create({
+    host: hostUrlEl.value,
+    identity: await currentIdentity(),
+    shouldFetchRootKey: true,
+  });
+  return Actor.createActor(idlFactory, {
+    agent,
+    canisterId: Principal.fromText(readCanisterId()),
+  });
+};
+
+const showChatRoom = async () => {
+  const actor = await testAppActor();
+  const room: any = await actor.chat_room();
+  const members = room.members
+    .map(
+      (member: any) =>
+        `${member.who.toText()} (last active ${member.last_active})`,
+    )
+    .join("\n");
+  const messages = room.messages
+    .map((message: any) => `${message.from.toText()}: ${message.text}`)
+    .join("\n");
+  chatRoomEl.innerText = `${room.members.length} member(s)\n${members}\n\n${messages}`;
+};
+
+chatJoinBtn.addEventListener("click", async () => {
+  const actor = await testAppActor();
+  const evicted: any = await actor.chat_join();
+  if (evicted.length > 0) {
+    chatRoomEl.innerText = `evicted ${evicted[0].toText()}\n`;
+  }
+  await showChatRoom();
+});
+
+chatSendBtn.addEventListener("click", async () => {
+  const actor = await testAppActor();
+  await actor.chat_send(chatTextEl.value);
+  chatTextEl.value = "";
+  await showChatRoom();
+});
+
+chatRefreshBtn.addEventListener("click", () => {
+  void showChatRoom();
+});
 
 /// `JSON.stringify` renders an Error as `{}`, so a real failure used to read as
 /// no failure at all. Name the error, and keep whatever a non-Error carries.
