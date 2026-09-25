@@ -709,6 +709,7 @@ dependencies = [
  "candid",
  "ic-cdk",
  "ic-cdk-macros",
+ "ic-cdk-timers",
  "ic-stable-structures",
  "identity-notifications",
  "include_dir",
