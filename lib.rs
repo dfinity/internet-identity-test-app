@@ -6,7 +6,7 @@ use ic_cdk_macros::{init, post_upgrade, query, update};
 use ic_stable_structures::memory_manager::{MemoryId, MemoryManager};
 use ic_stable_structures::DefaultMemoryImpl;
 use identity_notifications as notifications;
-use identity_notifications::Memories;
+use identity_notifications::{Memories, Metrics};
 use include_dir::{include_dir, Dir};
 use serde_bytes::ByteBuf;
 use std::cell::RefCell;
@@ -46,6 +46,12 @@ thread_local! {
 #[query]
 fn whoami() -> Principal {
     api::msg_caller()
+}
+
+/// The notification library's own delivery metrics, an hour per bucket.
+#[query]
+fn notification_metrics() -> Metrics {
+    notifications::metrics()
 }
 
 /// Returned by [`caller_attributes`].

@@ -52,6 +52,28 @@ type Room = record {
     messages: vec ChatMessage;
 };
 
+type Bucket = record {
+    /// The instant the hour begins, nanoseconds since the epoch.
+    start: nat64;
+    sent: nat64;
+    accepted: nat64;
+    deferred: nat64;
+    received: nat64;
+    dropped: nat64;
+};
+
+type Misconfigured = variant { Origin; Sender; NotAuthorizedSender };
+
+type MisconfiguredSince = record { why: Misconfigured; since: nat64 };
+
+type NotificationMetrics = record {
+    /// Up to 720 buckets, oldest first. Hours with no traffic are absent.
+    hours: vec Bucket;
+    /// Notifications waiting for Internet Identity to accept them.
+    backlog: nat64;
+    misconfigured: opt MisconfiguredSince;
+};
+
 /// What the notification library serves to Internet Identity on a pull.
 type NotificationContent = record {
     title: text;
@@ -88,6 +110,8 @@ service : (opt InitArg) -> {
   /// the messages are wiped hourly.
   chat_send: (text) -> ();
   chat_room: () -> (Room) query;
+  /// The notification library's delivery metrics, an hour per bucket.
+  notification_metrics: () -> (NotificationMetrics) query;
   /// Called by Internet Identity, not by a client: the content of a
   /// notification this canister sent, and the report that one was delivered.
   _internet_identity_notification_content: (nat64) -> (opt NotificationContent) query;
