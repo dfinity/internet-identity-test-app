@@ -69,6 +69,7 @@ thread_local! {
     /// Everything durable is in stable memory; what is here is the handle to
     /// it, plus two flags that only matter within one execution round.
     static STORE: RefCell<Option<Store>> = const { RefCell::new(None) };
+    static SENDER: RefCell<Option<Principal>> = const { RefCell::new(None) };
     static FLUSH_ARMED: RefCell<bool> = const { RefCell::new(false) };
     static FLUSHING: RefCell<bool> = const { RefCell::new(false) };
 }
@@ -139,6 +140,12 @@ pub fn send(recipient: Principal, notification: Notification) {
         }
     };
 
+    if sender(&config).is_none() {
+        note(Misconfigured::Sender, now);
+        with_store(|store| store.record(now, Event::Dropped, 1));
+        return;
+    }
+
     let added = with_store(|store| {
         store.add(
             recipient,
@@ -156,6 +163,14 @@ pub fn send(recipient: Principal, notification: Notification) {
             with_store(|store| store.record(now, Event::Dropped, 1));
         }
     }
+}
+
+/// Sends through this canister, and trusts it on a pull, in place of the
+/// `notification_sender` variable; `None` goes back to the variable. For a
+/// test canister retargeting Internet Identity at runtime, and not remembered
+/// across an upgrade.
+pub fn set_sender(sender: Option<Principal>) {
+    SENDER.set(sender);
 }
 
 /// This notification no longer needs anyone's attention.
@@ -224,6 +239,12 @@ fn configured() -> Result<Config, Misconfigured> {
     config::read()
 }
 
+/// Who this canister sends through, and whose caller info it trusts: what
+/// [`set_sender`] was given, or the configured variable.
+fn sender(config: &Config) -> Option<Principal> {
+    SENDER.with_borrow(|sender| *sender).or(config.sender)
+}
+
 fn note(why: Misconfigured, now: u64) {
     with_store(|store| store.note(why, now));
 }
@@ -232,7 +253,7 @@ fn note(why: Misconfigured, now: u64) {
 /// origin. Anything else is not ours to answer.
 fn sender_info() -> Option<SenderInfo> {
     let config = configured().ok()?;
-    if msg_caller_info_signer()? != config.sender {
+    if Some(msg_caller_info_signer()?) != sender(&config) {
         return None;
     }
 
@@ -265,6 +286,11 @@ async fn flush_once() {
         }
     };
 
+    let Some(sender) = sender(&config) else {
+        note(Misconfigured::Sender, time());
+        return;
+    };
+
     if with_store(|store| store.is_seeded()) == Some(false) {
         seed_ids().await;
     }
@@ -287,7 +313,7 @@ async fn flush_once() {
     }
 
     FLUSHING.set(true);
-    let outcome = send_batch(&config, &batch).await;
+    let outcome = send_batch(sender, &config.origin, &batch).await;
     FLUSHING.set(false);
 
     match &outcome {
@@ -305,10 +331,10 @@ async fn flush_once() {
     }
 }
 
-async fn send_batch(config: &Config, batch: &[Entry]) -> Outcome {
-    let arg = flush::arg(&config.origin, batch);
+async fn send_batch(sender: Principal, origin: &str, batch: &[Entry]) -> Outcome {
+    let arg = flush::arg(origin, batch);
 
-    let response = Call::unbounded_wait(config.sender, "app_send_notification")
+    let response = Call::unbounded_wait(sender, "app_send_notification")
         .with_arg(&arg)
         .await;
 
@@ -333,5 +359,47 @@ async fn seed_ids() {
 
     if let Ok(Ok(bytes)) = reply.map(|reply| reply.candid::<Vec<u8>>()) {
         with_store(|store| store.seed(&bytes));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn principal(n: u64) -> Principal {
+        Principal::from_slice(&n.to_be_bytes())
+    }
+
+    fn configured_as(sender: Option<Principal>) -> Config {
+        Config {
+            sender,
+            origin: "https://app.example.com".to_string(),
+            capacity_bytes: 1_024,
+        }
+    }
+
+    #[test]
+    fn an_override_answers_for_the_variable_and_gives_it_back() {
+        let from_variable = principal(1);
+        let from_override = principal(2);
+        let config = configured_as(Some(from_variable));
+
+        assert_eq!(sender(&config), Some(from_variable));
+
+        set_sender(Some(from_override));
+        assert_eq!(sender(&config), Some(from_override));
+
+        set_sender(None);
+        assert_eq!(sender(&config), Some(from_variable));
+    }
+
+    #[test]
+    fn an_override_is_enough_on_its_own() {
+        let config = configured_as(None);
+        assert_eq!(sender(&config), None, "nothing to send through");
+
+        set_sender(Some(principal(3)));
+        assert_eq!(sender(&config), Some(principal(3)));
+        set_sender(None);
     }
 }

@@ -48,6 +48,18 @@ fn whoami() -> Principal {
     api::msg_caller()
 }
 
+/// Points the notification library at an Internet Identity for as long as
+/// this instance lives, in place of the `notification_sender` environment
+/// variable. `None` goes back to the variable.
+///
+/// The Internet Identity a test drives this app against is chosen in the
+/// frontend, so the canister has to be told which one it is: it sends through
+/// that canister and trusts its signature when it serves a content pull.
+#[update]
+fn update_notification_sender(sender: Option<Principal>) {
+    notifications::set_sender(sender);
+}
+
 /// The notification library's own delivery metrics, an hour per bucket.
 #[query]
 fn notification_metrics() -> Metrics {

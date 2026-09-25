@@ -112,6 +112,11 @@ service : (opt InitArg) -> {
   chat_room: () -> (Room) query;
   /// The notification library's delivery metrics, an hour per bucket.
   notification_metrics: () -> (NotificationMetrics) query;
+  /// Points the notification library at an Internet Identity, in place of the
+  /// `notification_sender` environment variable, for as long as this instance
+  /// lives. Null goes back to the variable. The frontend chooses which
+  /// Internet Identity a test runs against, so the canister has to be told.
+  update_notification_sender: (opt principal) -> ();
   /// Called by Internet Identity, not by a client: the content of a
   /// notification this canister sent, and the report that one was delivered.
   _internet_identity_notification_content: (nat64) -> (opt NotificationContent) query;
