@@ -24,6 +24,8 @@ asset_util = { path = "asset_util" }
 candid = "0.10"
 ic-cdk = { workspace = true }
 ic-cdk-macros = "0.20"
+ic-stable-structures = "0.7"
+identity-notifications = { git = "https://github.com/dfinity/identity-notifications" }
 serde = { workspace = true }
 serde_bytes = "0.11"
 serde_json = "1"

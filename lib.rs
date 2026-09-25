@@ -3,10 +3,20 @@ use asset_util::{collect_assets, Asset, CertifiedAssets, ContentEncoding, Conten
 use candid::{CandidType, Deserialize, Principal};
 use ic_cdk::api;
 use ic_cdk_macros::{init, post_upgrade, query, update};
+use ic_stable_structures::memory_manager::{MemoryId, MemoryManager};
+use ic_stable_structures::DefaultMemoryImpl;
+use identity_notifications as notifications;
+use identity_notifications::Memories;
 use include_dir::{include_dir, Dir};
 use serde_bytes::ByteBuf;
 use std::cell::RefCell;
 use AlternativeOriginsMode::UncertifiedContent;
+
+mod chat;
+
+// The two endpoints Internet Identity calls to pull a notification's content
+// and report that a channel delivered it.
+notifications::endpoints!();
 
 const ALTERNATIVE_ORIGINS_PATH: &str = "/.well-known/ii-alternative-origins";
 const EVIL_ALTERNATIVE_ORIGINS_PATH: &str = "/.well-known/evil-alternative-origins";
@@ -19,12 +29,17 @@ const AUTH_CALLBACKS_PATH: &str = "/.well-known/ii-auth-callbacks";
 // through `update_app_metadata`, so by default II falls back to whatever it
 // knows about this origin on its own.
 const APP_METADATA_PATH: &str = "/.well-known/ii-app-metadata";
+// The canisters II accepts notifications for this origin from. This canister
+// sends its own, so it lists itself.
+const NOTIFICATION_SENDERS_PATH: &str = "/.well-known/ii-notification-senders";
 const EVIL_APP_METADATA_PATH: &str = "/.well-known/evil-app-metadata";
 const EMPTY_ALTERNATIVE_ORIGINS: &str = r#"{"alternativeOrigins":[]}"#;
 const OUTDATED_INVALID_CERTIFICATE_HEADER: &str = ":2dn3omR0cmVlgwGDAYMBgwJIY2FuaXN0ZXKDAYMBggRYIF7eYW50QXA1hAANBQ4J616Ekjch0ihDxnNGwvlxxIKDgwGCBFggH4wduBeihx+gd8Oe2KvzyQxp/PEe6ustjHJNlVhLbmaDAkqAAAAAABAAAwEBgwGDAYMCTmNlcnRpZmllZF9kYXRhggNYIIA3JGAjACCVyCTmsRmhhlZDI5oDZZkhGVMbpCIFTEejggRYIIMJ950nCB4emD2uvICtY5WfLhcOzb2BaqH4EvUGTX2xggRYIFfnBG3quMbImRDu81QLZKq0ADXD75bQIoPHA2y4JRQVggRYIETEKmiZ1Lflrx8sIiDUOqBdb7X+mJ5+kEturndxJYzeggRYINPKhi8ZGTDLJJGHdaSlL3lxf8JFGiBHe3FVp4y/myCvggRYIIZ883QyMwhObp/SFU8xtXu8w8xGgwEWfkJYAWqC9dNSgwGCBFgg49iYnFVeAADyzEwGNNe…Bcfct/T4ZWVYbJe/P3gUbLOS8n9uDAklodHRwX2V4cHKDAYMBgwGCBFgggaSHI9J56LbuKjb58O8AWYlQNqTWZBxB58L7Y6u9j2ODAksud2VsbC1rbm93boMBggRYIJY8druSGXKdr/LHH3Kr/F+Vo9VwgluKJZS6HxkTrIeUgwJWaWktYWx0ZXJuYXRpdmUtb3JpZ2luc4MCQzwkPoMCWCBiB64Pds+kxrd7O3KKhS3TAcooPTqycnGLKWuiy3dP6IMCQIMCWCCaryvDtyyZdDWHqiLmkc63lZuPrBF2Tt6ULsG0LUkWcIIDQIIEWCAYA1f5ooQFb7bDDkKE0QhYJLkfsn2j1GCIGJvp8r8ucYIEWCB28Uo/B0pARPP3FnDUBj83i4NpGPehI4IGGI2I2iOQhg==:, expr_path=:2dn3hGlodHRwX2V4cHJrLndlbGwta25vd252aWktYWx0ZXJuYXRpdmUtb3JpZ2luc2M8JD4=:, version=2";
 
 thread_local! {
     static ASSETS: RefCell<CertifiedAssets> = RefCell::new(CertifiedAssets::default());
+    static MEMORIES: RefCell<MemoryManager<DefaultMemoryImpl>> =
+        RefCell::new(MemoryManager::init(DefaultMemoryImpl::default()));
     static ALTERNATIVE_ORIGINS_MODE: RefCell<AlternativeOriginsMode> = const { RefCell::new(CertifiedContent) };
 }
 
@@ -250,6 +265,16 @@ pub struct InitArg {
 pub fn init(arg: Option<InitArg>) {
     let extra_auth_callbacks = arg.map(|arg| arg.auth_callbacks).unwrap_or_default();
     init_assets(EMPTY_ALTERNATIVE_ORIGINS.to_string(), extra_auth_callbacks);
+    MEMORIES.with_borrow(|manager| {
+        notifications::init(
+            manager,
+            Memories {
+                entries: MemoryId::new(0),
+                content: MemoryId::new(1),
+                metrics: MemoryId::new(2),
+            },
+        )
+    });
 }
 #[post_upgrade]
 fn post_upgrade(arg: Option<InitArg>) {
@@ -308,6 +333,15 @@ fn init_assets(alternative_origins: String, extra_auth_callbacks: Vec<String>) {
         encoding: ContentEncoding::Identity,
         content_type: ContentType::JSON,
     });
+    assets.push(Asset {
+        url_path: NOTIFICATION_SENDERS_PATH.to_string(),
+        content: serde_json::json!({ "senders": [canister_id.to_text()] })
+            .to_string()
+            .into_bytes(),
+        encoding: ContentEncoding::Identity,
+        content_type: ContentType::JSON,
+    });
+
     ASSETS.with_borrow_mut(|certified_assets| {
         *certified_assets = CertifiedAssets::certify_assets(assets, &static_headers());
     });
