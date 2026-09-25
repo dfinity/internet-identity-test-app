@@ -1,13 +1,8 @@
 canisters:
   - name: test_app
     settings:
-      # What the notification library reads: which canister to send through,
-      # and the origin it sends for. Both are per deployment — these are
-      # mainnet Internet Identity and this app's mainnet origin, so a local
-      # or e2e deployment has to override them.
-      #
-      # The origin is the live mainnet test app, vt36r, not the retired
-      # canister that `canister_ids.json` still names.
+      # Read by the notification library. A local or e2e deployment overrides
+      # them; these are mainnet.
       environment_variables:
         notification_sender: "rdmx6-jaaaa-aaaaa-aaadq-cai"
         notification_origin: "http://vt36r-2qaaa-aaaad-aad5a-cai.icp0.io"
