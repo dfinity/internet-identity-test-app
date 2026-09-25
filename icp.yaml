@@ -5,9 +5,12 @@ canisters:
       # and the origin it sends for. Both are per deployment — these are
       # mainnet Internet Identity and this app's mainnet origin, so a local
       # or e2e deployment has to override them.
+      #
+      # The origin is the live mainnet test app, vt36r, not the retired
+      # canister that `canister_ids.json` still names.
       environment_variables:
         notification_sender: "rdmx6-jaaaa-aaaaa-aaadq-cai"
-        notification_origin: "https://kvusz-kaaaa-aaaad-aabwa-cai.icp0.io"
+        notification_origin: "https://vt36r-2qaaa-aaaad-aad5a-cai.icp0.io"
     build:
       steps:
         - type: script
