@@ -393,6 +393,44 @@
         <h3>WindowPostMessages:</h3>
         <div id="messages"></div>
       </section>
+      <section id="chat">
+        <h1>Chat</h1>
+        <p>
+          One room, 100 members. Sending notifies everyone else through Internet
+          Identity. Messages are wiped hourly.
+        </p>
+        <button id="chatJoinBtn">Join</button>
+        <div>
+          <label for="chatText" style="display: inline-block">Message:</label>
+          <input type="text" id="chatText" />
+          <button id="chatSendBtn">Send</button>
+        </div>
+        <button id="chatRefreshBtn">Refresh</button>
+        <pre id="chatRoom"></pre>
+      </section>
+      <section id="notification-metrics">
+        <h1>Notification metrics</h1>
+        <div>
+          <label for="metricsWindow" style="display: inline-block"
+            >Window:</label
+          >
+          <select id="metricsWindow">
+            <option value="6">6 hours</option>
+            <option value="24" selected>24 hours</option>
+            <option value="168">7 days</option>
+            <option value="720">30 days</option>
+          </select>
+          <button id="metricsRefreshBtn">Refresh</button>
+        </div>
+        <p>
+          <span style="color: #888">sent</span>
+          <span style="color: #2a7">accepted</span>
+          <span style="color: #27a">received</span>
+          <span style="color: #a33">dropped</span>
+        </p>
+        <div id="metricsSummary"></div>
+        <div id="metricsChart"></div>
+      </section>
       <section id="root-vc-flow"></section>
       <section>
         <h1>User Agent</h1>

@@ -1,5 +1,11 @@
 canisters:
   - name: test_app
+    settings:
+      # Read by the notification library. A local or e2e deployment overrides
+      # them; these are mainnet.
+      environment_variables:
+        notification_sender: "rdmx6-jaaaa-aaaaa-aaadq-cai"
+        notification_origin: "http://vt36r-2qaaa-aaaad-aad5a-cai.icp0.io"
     build:
       steps:
         - type: script

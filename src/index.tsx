@@ -62,6 +62,25 @@ const customMessageBtn = document.getElementById(
 ) as HTMLButtonElement;
 const messagesEl = document.getElementById("messages") as HTMLElement;
 const hostUrlEl = document.getElementById("hostUrl") as HTMLInputElement;
+const chatJoinBtn = document.getElementById("chatJoinBtn") as HTMLButtonElement;
+const chatSendBtn = document.getElementById("chatSendBtn") as HTMLButtonElement;
+const chatRefreshBtn = document.getElementById(
+  "chatRefreshBtn",
+) as HTMLButtonElement;
+const chatTextEl = document.getElementById("chatText") as HTMLInputElement;
+const chatRoomEl = document.getElementById("chatRoom") as HTMLPreElement;
+const metricsWindowEl = document.getElementById(
+  "metricsWindow",
+) as HTMLSelectElement;
+const metricsRefreshBtn = document.getElementById(
+  "metricsRefreshBtn",
+) as HTMLButtonElement;
+const metricsSummaryEl = document.getElementById(
+  "metricsSummary",
+) as HTMLDivElement;
+const metricsChartEl = document.getElementById(
+  "metricsChart",
+) as HTMLDivElement;
 const whoAmIResponseEl = document.getElementById(
   "whoamiResponse",
 ) as HTMLDivElement;
@@ -174,6 +193,36 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     signer: IDL.Opt(IDL.Principal),
     data: IDL.Vec(IDL.Nat8),
   });
+  const Bucket = IDL.Record({
+    start: IDL.Nat64,
+    sent: IDL.Nat64,
+    accepted: IDL.Nat64,
+    deferred: IDL.Nat64,
+    received: IDL.Nat64,
+    dropped: IDL.Nat64,
+  });
+  const NotificationMetrics = IDL.Record({
+    hours: IDL.Vec(Bucket),
+    backlog: IDL.Nat64,
+    misconfigured: IDL.Opt(
+      IDL.Record({
+        why: IDL.Variant({
+          Origin: IDL.Null,
+          Sender: IDL.Null,
+          NotAuthorizedSender: IDL.Null,
+        }),
+        since: IDL.Nat64,
+      }),
+    ),
+  });
+  const Room = IDL.Record({
+    members: IDL.Vec(
+      IDL.Record({ who: IDL.Principal, last_active: IDL.Nat64 }),
+    ),
+    messages: IDL.Vec(
+      IDL.Record({ from: IDL.Principal, text: IDL.Text, at: IDL.Nat64 }),
+    ),
+  });
   return IDL.Service({
     http_request: IDL.Func([HttpRequest], [HttpResponse], ["query"]),
     update_alternative_origins: IDL.Func(
@@ -184,6 +233,11 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     update_app_metadata: IDL.Func([IDL.Text, AppMetadataMode], [], []),
     whoami: IDL.Func([], [IDL.Principal], ["query"]),
     caller_attributes: IDL.Func([], [CallerAttributes], []),
+    chat_join: IDL.Func([], [IDL.Opt(IDL.Principal)], []),
+    chat_send: IDL.Func([IDL.Text], [], []),
+    chat_room: IDL.Func([], [Room], ["query"]),
+    update_notification_sender: IDL.Func([IDL.Opt(IDL.Principal)], [], []),
+    notification_metrics: IDL.Func([], [NotificationMetrics], ["query"]),
   });
 };
 
@@ -857,6 +911,115 @@ const currentIdentity = async (): Promise<Identity | undefined> => {
 const showError = (err: string) => {
   alert(err);
 };
+
+/// The Internet Identity a test is driven against is the one in the II
+/// canister id box, so the canister is told before it sends anything.
+const pointNotificationsAtII = async (actor: any) => {
+  const id = iiCanisterIdEl.value.trim();
+  await actor.update_notification_sender(
+    id === "" ? [] : [Principal.fromText(id)],
+  );
+};
+
+const testAppActor = async () => {
+  const agent = await HttpAgent.create({
+    host: hostUrlEl.value,
+    identity: await currentIdentity(),
+    shouldFetchRootKey: true,
+  });
+  return Actor.createActor(idlFactory, {
+    agent,
+    canisterId: Principal.fromText(readCanisterId()),
+  });
+};
+
+const showChatRoom = async (notice?: string) => {
+  const actor = await testAppActor();
+  const room: any = await actor.chat_room();
+  const members = room.members
+    .map(
+      (member: any) =>
+        `${member.who.toText()} (last active ${member.last_active})`,
+    )
+    .join("\n");
+  const messages = room.messages
+    .map((message: any) => `${message.from.toText()}: ${message.text}`)
+    .join("\n");
+  const heading = notice === undefined ? "" : `${notice}\n\n`;
+  chatRoomEl.innerText = `${heading}${room.members.length} member(s)\n${members}\n\n${messages}`;
+};
+
+chatJoinBtn.addEventListener("click", async () => {
+  const actor = await testAppActor();
+  await pointNotificationsAtII(actor);
+  const evicted: any = await actor.chat_join();
+  await showChatRoom(
+    evicted.length > 0 ? `evicted ${evicted[0].toText()}` : undefined,
+  );
+});
+
+chatSendBtn.addEventListener("click", async () => {
+  const actor = await testAppActor();
+  await pointNotificationsAtII(actor);
+  await actor.chat_send(chatTextEl.value);
+  chatTextEl.value = "";
+  await showChatRoom();
+});
+
+chatRefreshBtn.addEventListener("click", () => {
+  void showChatRoom();
+});
+
+const SERIES = [
+  ["sent", "#888"],
+  ["accepted", "#2a7"],
+  ["received", "#27a"],
+  ["dropped", "#a33"],
+] as const;
+
+const showMetrics = async () => {
+  const actor = await testAppActor();
+  const metrics: any = await actor.notification_metrics();
+
+  const hours = Number(metricsWindowEl.value);
+  // The page targets ES2019, so no BigInt literals.
+  const cutoff =
+    BigInt(Date.now()) * BigInt(1_000_000) -
+    BigInt(hours) * BigInt(3_600_000_000_000);
+  const buckets = metrics.hours.filter((bucket: any) => bucket.start >= cutoff);
+
+  const height = 80;
+  const width = 16;
+  const tallest = Math.max(
+    1,
+    ...buckets.flatMap((bucket: any) =>
+      SERIES.map(([field]) => Number(bucket[field])),
+    ),
+  );
+  const bars = buckets
+    .map((bucket: any, hour: number) =>
+      SERIES.map(([field, colour], series) => {
+        const bar = (Number(bucket[field]) / tallest) * height;
+        const x = hour * width + series * 3;
+        return `<rect x="${x}" y="${height - bar}" width="3" height="${bar}" fill="${colour}" />`;
+      }).join(""),
+    )
+    .join("");
+  metricsChartEl.innerHTML = `<svg width="${Math.max(1, buckets.length) * width}" height="${height}" style="border-bottom: 1px solid #ccc">${bars}</svg>`;
+
+  const misconfigured =
+    metrics.misconfigured.length > 0
+      ? `, misconfigured: ${Object.keys(metrics.misconfigured[0].why)[0]}`
+      : "";
+  metricsSummaryEl.innerText = `backlog ${metrics.backlog}, ${buckets.length} hour(s) with traffic in the last ${hours}h, tallest bar ${tallest}${misconfigured}`;
+};
+
+metricsRefreshBtn.addEventListener("click", () => {
+  void showMetrics();
+});
+metricsWindowEl.addEventListener("change", () => {
+  void showMetrics();
+});
 
 /// `JSON.stringify` renders an Error as `{}`, so a real failure used to read as
 /// no failure at all. Name the error, and keep whatever a non-Error carries.
