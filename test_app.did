@@ -84,7 +84,8 @@ service : (opt InitArg) -> {
   /// 100 members, and a join beyond that drops whoever has been quiet longest.
   chat_join: () -> (opt principal);
   /// Posts a message and notifies everyone else in the room through Internet
-  /// Identity.
+  /// Identity. Long messages are truncated, only the last 50 are kept, and
+  /// the messages are wiped hourly.
   chat_send: (text) -> ();
   chat_room: () -> (Room) query;
   /// Called by Internet Identity, not by a client: the content of a

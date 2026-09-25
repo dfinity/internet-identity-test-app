@@ -265,6 +265,7 @@ pub struct InitArg {
 pub fn init(arg: Option<InitArg>) {
     let extra_auth_callbacks = arg.map(|arg| arg.auth_callbacks).unwrap_or_default();
     init_assets(EMPTY_ALTERNATIVE_ORIGINS.to_string(), extra_auth_callbacks);
+    chat::start_wiping();
     MEMORIES.with_borrow(|manager| {
         notifications::init(
             manager,

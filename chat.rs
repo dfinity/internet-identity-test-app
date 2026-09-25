@@ -8,11 +8,22 @@
 use candid::{CandidType, Deserialize, Principal};
 use ic_cdk::api::{msg_caller, time};
 use ic_cdk_macros::{query, update};
+use ic_cdk_timers::set_timer_interval;
 use identity_notifications as notifications;
 use identity_notifications::Notification;
 use std::cell::RefCell;
+use std::time::Duration;
 
 const CAPACITY: usize = 100;
+
+/// A tester's message, not a document, and the room is read whole by
+/// `chat_room`.
+const MAX_TEXT: usize = 500;
+const MAX_MESSAGES: usize = 50;
+
+/// Messages are wiped this often, so a room left alone is empty when someone
+/// comes back to it.
+pub const WIPE_EVERY: Duration = Duration::from_secs(60 * 60);
 
 /// Every message is about the same thing — the room — so they share one key,
 /// and a second message replaces the notification the first one left.
@@ -74,11 +85,13 @@ fn join(room: &mut Room, who: Principal, now: u64) -> Option<Principal> {
     Some(room.members.remove(quietest).who)
 }
 
-/// Posts a message and notifies everyone else in the room.
+/// Posts a message and notifies everyone else in the room. Long messages are
+/// truncated and only the last [`MAX_MESSAGES`] are kept.
 #[update]
 pub fn chat_send(text: String) {
     let caller = msg_caller();
     let now = time();
+    let text: String = text.chars().take(MAX_TEXT).collect();
 
     let members = ROOM.with_borrow_mut(|room| {
         if let Some(member) = room.members.iter_mut().find(|member| member.who == caller) {
@@ -90,6 +103,9 @@ pub fn chat_send(text: String) {
             text: text.clone(),
             at: now,
         });
+        if room.messages.len() > MAX_MESSAGES {
+            room.messages.remove(0);
+        }
 
         room.members
             .iter()
@@ -114,6 +130,14 @@ pub fn chat_send(text: String) {
 #[query]
 pub fn chat_room() -> Room {
     ROOM.with_borrow(Clone::clone)
+}
+
+/// Starts the hourly wipe. Called from `init` and `post_upgrade`, because a
+/// timer does not survive an upgrade.
+pub fn start_wiping() {
+    set_timer_interval(WIPE_EVERY, || async {
+        ROOM.with_borrow_mut(|room| room.messages.clear())
+    });
 }
 
 /// Where acting on a notification takes the user. Internet Identity refuses a

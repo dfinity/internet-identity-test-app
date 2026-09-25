@@ -888,7 +888,7 @@ const testAppActor = async () => {
   });
 };
 
-const showChatRoom = async () => {
+const showChatRoom = async (notice?: string) => {
   const actor = await testAppActor();
   const room: any = await actor.chat_room();
   const members = room.members
@@ -900,16 +900,16 @@ const showChatRoom = async () => {
   const messages = room.messages
     .map((message: any) => `${message.from.toText()}: ${message.text}`)
     .join("\n");
-  chatRoomEl.innerText = `${room.members.length} member(s)\n${members}\n\n${messages}`;
+  const heading = notice === undefined ? "" : `${notice}\n\n`;
+  chatRoomEl.innerText = `${heading}${room.members.length} member(s)\n${members}\n\n${messages}`;
 };
 
 chatJoinBtn.addEventListener("click", async () => {
   const actor = await testAppActor();
   const evicted: any = await actor.chat_join();
-  if (evicted.length > 0) {
-    chatRoomEl.innerText = `evicted ${evicted[0].toText()}\n`;
-  }
-  await showChatRoom();
+  await showChatRoom(
+    evicted.length > 0 ? `evicted ${evicted[0].toText()}` : undefined,
+  );
 });
 
 chatSendBtn.addEventListener("click", async () => {
