@@ -8,7 +8,9 @@ pub const DEFAULT_CAPACITY_MB: usize = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
-    pub sender: Principal,
+    /// `None` where the variable is unset or not a principal, which
+    /// [`crate::set_sender`] can still answer for.
+    pub sender: Option<Principal>,
     pub origin: String,
     pub capacity_bytes: usize,
 }
@@ -27,11 +29,11 @@ pub fn read() -> Result<Config, Misconfigured> {
         return Err(Misconfigured::Origin);
     }
 
-    if !env_var_name_exists("notification_sender") {
-        return Err(Misconfigured::Sender);
-    }
-    let sender = Principal::from_text(env_var_value("notification_sender"))
-        .map_err(|_| Misconfigured::Sender)?;
+    let sender = if env_var_name_exists("notification_sender") {
+        Principal::from_text(env_var_value("notification_sender")).ok()
+    } else {
+        None
+    };
 
     let capacity_mb = if env_var_name_exists("notification_capacity_mb") {
         env_var_value("notification_capacity_mb")

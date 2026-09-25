@@ -236,6 +236,7 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     chat_join: IDL.Func([], [IDL.Opt(IDL.Principal)], []),
     chat_send: IDL.Func([IDL.Text], [], []),
     chat_room: IDL.Func([], [Room], ["query"]),
+    update_notification_sender: IDL.Func([IDL.Opt(IDL.Principal)], [], []),
     notification_metrics: IDL.Func([], [NotificationMetrics], ["query"]),
   });
 };
@@ -911,6 +912,15 @@ const showError = (err: string) => {
   alert(err);
 };
 
+/// The Internet Identity a test is driven against is the one in the II
+/// canister id box, so the canister is told before it sends anything.
+const pointNotificationsAtII = async (actor: any) => {
+  const id = iiCanisterIdEl.value.trim();
+  await actor.update_notification_sender(
+    id === "" ? [] : [Principal.fromText(id)],
+  );
+};
+
 const testAppActor = async () => {
   const agent = await HttpAgent.create({
     host: hostUrlEl.value,
@@ -941,6 +951,7 @@ const showChatRoom = async (notice?: string) => {
 
 chatJoinBtn.addEventListener("click", async () => {
   const actor = await testAppActor();
+  await pointNotificationsAtII(actor);
   const evicted: any = await actor.chat_join();
   await showChatRoom(
     evicted.length > 0 ? `evicted ${evicted[0].toText()}` : undefined,
@@ -949,6 +960,7 @@ chatJoinBtn.addEventListener("click", async () => {
 
 chatSendBtn.addEventListener("click", async () => {
   const actor = await testAppActor();
+  await pointNotificationsAtII(actor);
   await actor.chat_send(chatTextEl.value);
   chatTextEl.value = "";
   await showChatRoom();
