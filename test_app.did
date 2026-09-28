@@ -45,11 +45,15 @@ type ChatMessage = record {
     from: principal;
     text: text;
     at: nat64;
+    /// Names this message's notification, for as long as the room holds it.
+    sequence: nat64;
 };
 
 type Room = record {
     members: vec Member;
     messages: vec ChatMessage;
+    /// Messages ever sent to the room, which is what numbers them.
+    sent: nat64;
 };
 
 type Bucket = record {
@@ -110,6 +114,10 @@ service : (opt InitArg) -> {
   chat_leave: () -> ();
   /// Empties the room: every member is kicked out and every message goes.
   chat_clear: () -> ();
+  /// The caller is looking at the room, so a notification about it is dismissed:
+  /// a browser not yet woken for it shows nothing, and one already showing it
+  /// closes it on its next wake-up.
+  chat_seen: () -> ();
   /// Posts a message and notifies everyone else in the room through Internet
   /// Identity. Long messages are truncated, only the last 50 are kept, and
   /// the messages are wiped hourly.
