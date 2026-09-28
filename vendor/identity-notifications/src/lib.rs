@@ -38,7 +38,7 @@ pub mod types;
 use candid::Principal;
 use ic_cdk::api::{msg_caller_info_data, msg_caller_info_signer, time};
 use ic_cdk::call::Call;
-use ic_cdk_timers::set_timer;
+use ic_cdk_timers::{clear_timer, set_timer, TimerId};
 use ic_stable_structures::memory_manager::MemoryManager;
 use ic_stable_structures::DefaultMemoryImpl;
 use internal::config::{self, Config};
@@ -70,7 +70,9 @@ thread_local! {
     /// it, plus two flags that only matter within one execution round.
     static STORE: RefCell<Option<Store>> = const { RefCell::new(None) };
     static SENDER: RefCell<Option<Principal>> = const { RefCell::new(None) };
-    static FLUSH_ARMED: RefCell<bool> = const { RefCell::new(false) };
+    /// The wake-up that is set, and when it fires, so a nearer one can take
+    /// its place.
+    static ARMED: RefCell<Option<(TimerId, u64)>> = const { RefCell::new(None) };
     static FLUSHING: RefCell<bool> = const { RefCell::new(false) };
 }
 
@@ -109,14 +111,11 @@ pub fn init(manager: &MemoryManager<DefaultMemoryImpl>, memories: Memories) {
         store.set_batch_limit(BATCH_GUESS);
     }
 
-    let waiting = store.backlog() > 0;
     STORE.set(Some(store));
 
     // A timer does not survive an upgrade, so an outbox that did needs one.
-    // Nothing is waiting on a fresh install, and nothing is scheduled.
-    if waiting {
-        arm();
-    }
+    // A fresh install has nothing queued, which arming answers with no timer.
+    arm();
 }
 
 fn with_store<T>(f: impl FnOnce(&mut Store) -> T) -> Option<T> {
@@ -258,25 +257,39 @@ fn sender_info() -> Option<SenderInfo> {
     }
 
     let info = internal::caller_info::decode(&msg_caller_info_data())?;
-    (info.origin == config.origin).then_some(info)
+    (internal::origin::fold(&info.origin) == internal::origin::fold(&config.origin)).then_some(info)
 }
 
+/// Sets the wake-up for when the outbox next has something to do: the coalesce
+/// window where anything is waiting, the due time where an entry is parked for
+/// later, and no timer at all for an empty outbox. A call in flight carries its
+/// own wake-up, and one already set for later gives way to a nearer one.
 fn arm() {
-    let arm = FLUSH_ARMED.with_borrow_mut(|armed| {
-        if *armed || FLUSHING.with_borrow(|flushing| *flushing) {
-            return false;
-        }
-        *armed = true;
-        true
-    });
-
-    if arm {
-        set_timer(COALESCE, flush_once());
+    if FLUSHING.with_borrow(|flushing| *flushing) {
+        return;
     }
+    let Some(due) = with_store(|store| store.next_due()).flatten() else {
+        return;
+    };
+
+    let now = time();
+    let at = due.max(now + COALESCE.as_nanos() as u64);
+    ARMED.with_borrow_mut(|armed| {
+        if armed.is_some_and(|(_, when)| when <= at) {
+            return;
+        }
+        if let Some((timer, _)) = armed.take() {
+            clear_timer(timer);
+        }
+        *armed = Some((
+            set_timer(Duration::from_nanos(at.saturating_sub(now)), flush_once()),
+            at,
+        ));
+    });
 }
 
 async fn flush_once() {
-    FLUSH_ARMED.set(false);
+    ARMED.set(None);
 
     let config = match configured() {
         Ok(config) => config,
@@ -309,6 +322,8 @@ async fn flush_once() {
     .unwrap_or_default();
 
     if batch.is_empty() {
+        // Nothing is sendable yet: a parked entry still has its turn coming.
+        arm();
         return;
     }
 
@@ -326,9 +341,7 @@ async fn flush_once() {
 
     with_store(|store| flush::apply(store, batch, outcome, now));
 
-    if with_store(|store| store.backlog() > 0) == Some(true) {
-        arm();
-    }
+    arm();
 }
 
 async fn send_batch(sender: Principal, origin: &str, batch: &[Entry]) -> Outcome {
