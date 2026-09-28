@@ -64,9 +64,13 @@ const messagesEl = document.getElementById("messages") as HTMLElement;
 const hostUrlEl = document.getElementById("hostUrl") as HTMLInputElement;
 const chatJoinBtn = document.getElementById("chatJoinBtn") as HTMLButtonElement;
 const chatSendBtn = document.getElementById("chatSendBtn") as HTMLButtonElement;
-const chatRefreshBtn = document.getElementById(
-  "chatRefreshBtn",
+const chatLeaveBtn = document.getElementById(
+  "chatLeaveBtn",
 ) as HTMLButtonElement;
+const chatClearBtn = document.getElementById(
+  "chatClearBtn",
+) as HTMLButtonElement;
+const chatStateEl = document.getElementById("chatState") as HTMLElement;
 const chatTextEl = document.getElementById("chatText") as HTMLInputElement;
 const chatRoomEl = document.getElementById("chatRoom") as HTMLPreElement;
 const metricsWindowEl = document.getElementById(
@@ -234,6 +238,8 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     whoami: IDL.Func([], [IDL.Principal], ["query"]),
     caller_attributes: IDL.Func([], [CallerAttributes], []),
     chat_join: IDL.Func([], [IDL.Opt(IDL.Principal)], []),
+    chat_leave: IDL.Func([], [], []),
+    chat_clear: IDL.Func([], [], []),
     chat_send: IDL.Func([IDL.Text], [], []),
     chat_room: IDL.Func([], [Room], ["query"]),
     update_notification_sender: IDL.Func([IDL.Opt(IDL.Principal)], [], []),
@@ -328,6 +334,8 @@ const updateDelegationView = ({
     delegationEl.innerText = "Current identity is not a DelegationIdentity";
     expirationEl.innerText = "N/A";
   }
+
+  void showChatRoom();
 };
 
 const updateAlternativeOriginsView = async () => {
@@ -805,6 +813,9 @@ const init = async () => {
 
   await updateAlternativeOriginsView();
   await updateAppMetadataView();
+  // The room is read as the page loads so its state line is right from the
+  // start; a page opened without a canister id to read it from is not.
+  await showChatRoom().catch(() => undefined);
 };
 
 window.addEventListener("DOMContentLoaded", init);
@@ -933,13 +944,68 @@ const testAppActor = async () => {
   });
 };
 
+let chatJoined = false;
+let chatSending = false;
+
+/// A call takes a couple of seconds, and the button is the only place that
+/// shows it: it says what it is doing and refuses a second press meanwhile.
+const whileBusy = async (
+  button: HTMLButtonElement,
+  label: string,
+  run: () => Promise<void>,
+): Promise<void> => {
+  const was = button.innerText;
+  button.innerText = label;
+  button.disabled = true;
+  try {
+    await run();
+  } finally {
+    button.innerText = was;
+    button.disabled = false;
+  }
+};
+
+/// There is nothing to send until a member has typed something, and a send in
+/// flight says so — it takes a couple of seconds, and the button is the only
+/// place that shows it.
+const updateSendState = () => {
+  chatSendBtn.innerText = chatSending ? "Sending…" : "Send";
+  chatSendBtn.disabled =
+    chatSending || !chatJoined || chatTextEl.value.trim() === "";
+};
+
+/// Whether this identity is in the room decides what it can do there: only a
+/// member can send, and only a member is notified of what others send.
 const showChatRoom = async (notice?: string) => {
   const actor = await testAppActor();
   const room: any = await actor.chat_room();
+  const identity = await currentIdentity();
+  const mine = identity?.getPrincipal().toText();
+  const joined =
+    mine !== undefined &&
+    room.members.some((member: any) => member.who.toText() === mine);
+
+  chatStateEl.innerText =
+    mine === undefined
+      ? "Signed out — sign in to join"
+      : joined
+        ? `Joined as ${mine}`
+        : "Not joined — join to send and to be notified";
+  // `hidden` is only the UA stylesheet's `display: none`, which this page's own
+  // `button` rule outranks, so the display is set here.
+  chatJoinBtn.style.display = joined ? "none" : "";
+  chatJoinBtn.disabled = mine === undefined;
+  chatLeaveBtn.style.display = joined ? "" : "none";
+  chatTextEl.disabled = !joined;
+  chatJoined = joined;
+  updateSendState();
+
   const members = room.members
     .map(
       (member: any) =>
-        `${member.who.toText()} (last active ${member.last_active})`,
+        `${member.who.toText()}${
+          member.who.toText() === mine ? " (you)" : ""
+        } (last active ${member.last_active})`,
     )
     .join("\n");
   const messages = room.messages
@@ -950,24 +1016,55 @@ const showChatRoom = async (notice?: string) => {
 };
 
 chatJoinBtn.addEventListener("click", async () => {
-  const actor = await testAppActor();
-  await pointNotificationsAtII(actor);
-  const evicted: any = await actor.chat_join();
-  await showChatRoom(
-    evicted.length > 0 ? `evicted ${evicted[0].toText()}` : undefined,
-  );
+  await whileBusy(chatJoinBtn, "Joining…", async () => {
+    const actor = await testAppActor();
+    await pointNotificationsAtII(actor);
+    const evicted: any = await actor.chat_join();
+    await showChatRoom(
+      evicted.length > 0 ? `evicted ${evicted[0].toText()}` : undefined,
+    );
+  });
+});
+
+chatClearBtn.addEventListener("click", async () => {
+  await whileBusy(chatClearBtn, "Clearing…", async () => {
+    const actor = await testAppActor();
+    await actor.chat_clear();
+    await showChatRoom();
+  });
+});
+
+chatLeaveBtn.addEventListener("click", async () => {
+  await whileBusy(chatLeaveBtn, "Leaving…", async () => {
+    const actor = await testAppActor();
+    await actor.chat_leave();
+    await showChatRoom();
+  });
 });
 
 chatSendBtn.addEventListener("click", async () => {
-  const actor = await testAppActor();
-  await pointNotificationsAtII(actor);
-  await actor.chat_send(chatTextEl.value);
-  chatTextEl.value = "";
-  await showChatRoom();
+  chatSending = true;
+  updateSendState();
+  try {
+    const actor = await testAppActor();
+    await actor.chat_send(chatTextEl.value.trim());
+    chatTextEl.value = "";
+    await showChatRoom();
+  } finally {
+    chatSending = false;
+    updateSendState();
+  }
 });
 
-chatRefreshBtn.addEventListener("click", () => {
-  void showChatRoom();
+chatTextEl.addEventListener("input", updateSendState);
+
+// Nothing tells the page that someone else has sent something, so it asks.
+setInterval(() => void showChatRoom().catch(() => undefined), 5_000);
+
+chatTextEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !chatSendBtn.disabled) {
+    chatSendBtn.click();
+  }
 });
 
 const SERIES = [

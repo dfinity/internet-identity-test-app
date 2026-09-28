@@ -399,13 +399,15 @@
           One room, 100 members. Sending notifies everyone else through Internet
           Identity. Messages are wiped hourly.
         </p>
+        <p id="chatState"></p>
         <button id="chatJoinBtn">Join</button>
+        <button id="chatLeaveBtn" style="display: none">Leave</button>
+        <button id="chatClearBtn">Clear the room</button>
         <div>
           <label for="chatText" style="display: inline-block">Message:</label>
-          <input type="text" id="chatText" />
-          <button id="chatSendBtn">Send</button>
+          <input type="text" id="chatText" disabled />
+          <button id="chatSendBtn" disabled>Send</button>
         </div>
-        <button id="chatRefreshBtn">Refresh</button>
         <pre id="chatRoom"></pre>
       </section>
       <section id="notification-metrics">

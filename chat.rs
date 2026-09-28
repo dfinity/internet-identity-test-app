@@ -85,6 +85,27 @@ fn join(room: &mut Room, who: Principal, now: u64) -> Option<Principal> {
     Some(room.members.remove(quietest).who)
 }
 
+/// Leaves the room, so this principal stops being notified of what others
+/// send. Nothing happens where the caller is not in it.
+#[update]
+pub fn chat_leave() {
+    ROOM.with_borrow_mut(|room| leave(room, msg_caller()));
+}
+
+fn leave(room: &mut Room, who: Principal) {
+    room.members.retain(|member| member.who != who);
+}
+
+/// Empties the room: everyone is kicked out and every message goes, so a test
+/// can start from nothing instead of waiting for the hourly wipe.
+#[update]
+pub fn chat_clear() {
+    ROOM.with_borrow_mut(|room| {
+        room.members.clear();
+        room.messages.clear();
+    });
+}
+
 /// Posts a message and notifies everyone else in the room. Long messages are
 /// truncated and only the last [`MAX_MESSAGES`] are kept.
 #[update]
@@ -117,7 +138,7 @@ pub fn chat_send(text: String) {
         notifications::send(
             member,
             Notification {
-                title: "Test app chat".to_string(),
+                title: "New message".to_string(),
                 body: text.clone(),
                 url: chat_url(),
                 key: Some(KEY.to_string()),
@@ -171,6 +192,19 @@ mod tests {
 
         assert_eq!(room.members.len(), 1);
         assert_eq!(room.members[0].last_active, 20);
+    }
+
+    #[test]
+    fn leaving_takes_only_the_caller_out() {
+        let mut room = Room::default();
+        join(&mut room, member(1), 10);
+        join(&mut room, member(2), 20);
+
+        leave(&mut room, member(1));
+        leave(&mut room, member(3));
+
+        assert_eq!(room.members.len(), 1);
+        assert_eq!(room.members[0].who, member(2));
     }
 
     #[test]
