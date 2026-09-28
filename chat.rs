@@ -25,9 +25,11 @@ const MAX_MESSAGES: usize = 50;
 /// comes back to it.
 pub const WIPE_EVERY: Duration = Duration::from_secs(60 * 60);
 
-/// Every message is about the same thing — the room — so they share one key,
-/// and a second message replaces the notification the first one left.
-const KEY: &str = "chat";
+/// Each message is its own notification, so they stack on a recipient's screen
+/// and a read of the room can take them all back at once.
+fn key_of(sequence: u64) -> String {
+    format!("chat-{sequence}")
+}
 
 #[derive(Clone, Debug, CandidType, Deserialize)]
 pub struct Member {
@@ -41,12 +43,15 @@ pub struct ChatMessage {
     pub from: Principal,
     pub text: String,
     pub at: u64,
+    /// Names this message's notification, for as long as the room holds it.
+    pub sequence: u64,
 }
 
 #[derive(Clone, Debug, Default, CandidType, Deserialize)]
 pub struct Room {
     pub members: Vec<Member>,
     pub messages: Vec<ChatMessage>,
+    pub sent: u64,
 }
 
 thread_local! {
@@ -96,6 +101,23 @@ fn leave(room: &mut Room, who: Principal) {
     room.members.retain(|member| member.who != who);
 }
 
+/// The caller has read the room, so its notifications no longer need their
+/// attention on any of their browsers: each one is dropped, so a browser not
+/// yet woken for it shows nothing and one already showing it closes it on its
+/// next wake-up.
+#[update]
+pub fn chat_seen() {
+    let caller = msg_caller();
+    for sequence in ROOM.with_borrow(|room| {
+        room.messages
+            .iter()
+            .map(|message| message.sequence)
+            .collect::<Vec<_>>()
+    }) {
+        notifications::dismiss(caller, &key_of(sequence));
+    }
+}
+
 /// Empties the room: everyone is kicked out and every message goes, so a test
 /// can start from nothing instead of waiting for the hourly wipe.
 #[update]
@@ -114,24 +136,29 @@ pub fn chat_send(text: String) {
     let now = time();
     let text: String = text.chars().take(MAX_TEXT).collect();
 
-    let members = ROOM.with_borrow_mut(|room| {
+    let (sequence, members) = ROOM.with_borrow_mut(|room| {
         if let Some(member) = room.members.iter_mut().find(|member| member.who == caller) {
             member.last_active = now;
         }
 
+        room.sent += 1;
         room.messages.push(ChatMessage {
             from: caller,
             text: text.clone(),
             at: now,
+            sequence: room.sent,
         });
         if room.messages.len() > MAX_MESSAGES {
             room.messages.remove(0);
         }
 
-        room.members
-            .iter()
-            .map(|member| member.who)
-            .collect::<Vec<_>>()
+        (
+            room.sent,
+            room.members
+                .iter()
+                .map(|member| member.who)
+                .collect::<Vec<_>>(),
+        )
     });
 
     for member in members.into_iter().filter(|member| *member != caller) {
@@ -141,7 +168,7 @@ pub fn chat_send(text: String) {
                 title: "New message".to_string(),
                 body: text.clone(),
                 url: chat_url(),
-                key: Some(KEY.to_string()),
+                key: Some(key_of(sequence)),
                 ..Default::default()
             },
         );

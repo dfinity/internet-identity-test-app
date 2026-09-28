@@ -71,6 +71,8 @@ const chatClearBtn = document.getElementById(
   "chatClearBtn",
 ) as HTMLButtonElement;
 const chatStateEl = document.getElementById("chatState") as HTMLElement;
+const chatReadEl = document.getElementById("chatRead") as HTMLElement;
+const chatSectionEl = document.getElementById("chat") as HTMLElement;
 const chatTextEl = document.getElementById("chatText") as HTMLInputElement;
 const chatRoomEl = document.getElementById("chatRoom") as HTMLPreElement;
 const metricsWindowEl = document.getElementById(
@@ -224,8 +226,14 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
       IDL.Record({ who: IDL.Principal, last_active: IDL.Nat64 }),
     ),
     messages: IDL.Vec(
-      IDL.Record({ from: IDL.Principal, text: IDL.Text, at: IDL.Nat64 }),
+      IDL.Record({
+        from: IDL.Principal,
+        text: IDL.Text,
+        at: IDL.Nat64,
+        sequence: IDL.Nat64,
+      }),
     ),
+    sent: IDL.Nat64,
   });
   return IDL.Service({
     http_request: IDL.Func([HttpRequest], [HttpResponse], ["query"]),
@@ -240,6 +248,7 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     chat_join: IDL.Func([], [IDL.Opt(IDL.Principal)], []),
     chat_leave: IDL.Func([], [], []),
     chat_clear: IDL.Func([], [], []),
+    chat_seen: IDL.Func([], [], []),
     chat_send: IDL.Func([IDL.Text], [], []),
     chat_room: IDL.Func([], [Room], ["query"]),
     update_notification_sender: IDL.Func([IDL.Opt(IDL.Principal)], [], []),
@@ -946,6 +955,14 @@ const testAppActor = async () => {
 
 let chatJoined = false;
 let chatSending = false;
+let chatOnScreen = false;
+/// The newest message this identity has been told it has read.
+let chatSeenAt: bigint | undefined;
+
+/// Reading the room is having it in front of you: the section on screen, in a
+/// tab you are looking at.
+const chatIsBeingRead = (): boolean =>
+  chatJoined && chatOnScreen && document.visibilityState === "visible";
 
 /// A call takes a couple of seconds, and the button is the only place that
 /// shows it: it says what it is doing and refuses a second press meanwhile.
@@ -999,6 +1016,15 @@ const showChatRoom = async (notice?: string) => {
   chatTextEl.disabled = !joined;
   chatJoined = joined;
   updateSendState();
+
+  const newest = room.messages.at(-1)?.at as bigint | undefined;
+  if (chatIsBeingRead() && newest !== undefined && newest !== chatSeenAt) {
+    chatSeenAt = newest;
+    await actor.chat_seen();
+    chatReadEl.innerText = `Read up to ${new Date(
+      Number(newest / BigInt(1_000_000)),
+    ).toLocaleTimeString()} — notifications cleared`;
+  }
 
   const members = room.members
     .map(
@@ -1060,6 +1086,20 @@ chatTextEl.addEventListener("input", updateSendState);
 
 // Nothing tells the page that someone else has sent something, so it asks.
 setInterval(() => void showChatRoom().catch(() => undefined), 5_000);
+
+// Coming into view, or coming back to the tab, is reading the room: ask at once
+// rather than at the next poll.
+new IntersectionObserver(
+  (entries) => {
+    chatOnScreen = entries.some((entry) => entry.isIntersecting);
+    void showChatRoom().catch(() => undefined);
+  },
+  { threshold: 0.2 },
+).observe(chatSectionEl);
+
+document.addEventListener("visibilitychange", () => {
+  void showChatRoom().catch(() => undefined);
+});
 
 chatTextEl.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !chatSendBtn.disabled) {
