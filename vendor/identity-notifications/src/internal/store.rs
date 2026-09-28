@@ -250,6 +250,7 @@ impl Store {
             }
         };
 
+        let expires_at = notification.expires_at.unwrap_or(default_expiry);
         let content = Content {
             title: notification.title,
             body: notification.body,
@@ -277,8 +278,12 @@ impl Store {
         self.set_meta(meta);
 
         match self.slot_of(id) {
-            // Still on its way out: its content is replaced, the entry stands.
-            Some(slot) if slot.queued() => return Some(id),
+            // Still on its way out, so the entry stands: what this send brings
+            // is content, a lane and a window of its own.
+            Some(slot) if slot.queued() => {
+                self.rewindow(id, expires_at);
+                return Some(id);
+            }
             // Accepted, so Internet Identity holds a notification whose content
             // has just changed. Sending it again replaces that one.
             Some(_) => {
@@ -291,13 +296,34 @@ impl Store {
             id,
             recipient,
             lane: lane_of(notification.urgency) as u8,
-            expires_at: notification.expires_at.unwrap_or(default_expiry),
+            expires_at,
             due_at: now,
             retried: false,
         };
         self.place(entry, keys::WAITING, entry.expires_at);
 
         Some(id)
+    }
+
+    /// When the outbox next has something to do: now, where anything is
+    /// waiting, or the soonest parked entry's turn. Nothing queued, no answer.
+    pub fn next_due(&self) -> Option<u64> {
+        let waiting = (0..LANES).any(|lane| {
+            self.entries
+                .range(EntryKey::lane_start(lane)..=EntryKey::lane_end(lane))
+                .next()
+                .is_some()
+        });
+        if waiting {
+            return Some(0);
+        }
+
+        self.entries
+            .range(EntryKey::parked_start()..=EntryKey::parked_due_by(u64::MAX))
+            .find_map(|row| match row.value() {
+                Row::Entry(entry) => Some(entry.due_at),
+                Row::Slot(_) => None,
+            })
     }
 
     /// Returns parked entries to their lanes once they are due.
@@ -536,6 +562,31 @@ impl Store {
             .collect()
     }
 
+    /// Carries a fresh window to an entry that is still queued, leaving where it
+    /// stands, when it is due and the lane it was queued in alone.
+    ///
+    /// An entry that has spent its second attempt keeps the window it was
+    /// refused in, so a dormant recipient costs an app one round of refusals
+    /// however often it repeats the key. Nothing refused a deferred entry, so a
+    /// send that finds one waiting on Internet Identity's own timetable is
+    /// given the window it asks for.
+    fn rewindow(&mut self, id: NotificationId, expires_at: u64) {
+        let Some(slot) = self.slot_of(id) else { return };
+        let Some(Row::Entry(mut entry)) = self.entries.get(&slot.key(id)) else {
+            return;
+        };
+        if entry.retried {
+            return;
+        }
+
+        entry.expires_at = expires_at;
+        let at = match slot.kind {
+            keys::PARKED => entry.due_at,
+            _ => entry.expires_at,
+        };
+        self.place(entry, slot.kind, at);
+    }
+
     fn slot_of(&self, id: NotificationId) -> Option<Slot> {
         match self.entries.get(&EntryKey::slot(id)) {
             Some(Row::Slot(slot)) => Some(slot),
@@ -637,6 +688,7 @@ mod tests {
     use crate::types::Urgency;
 
     const HOUR: u64 = 3_600_000_000_000;
+    const MINUTE: u64 = 60_000_000_000;
     const ROOMY: u64 = 1_000_000;
     const MEMORY_IDS: Memories = Memories {
         entries: MemoryId::new(0),
@@ -915,5 +967,76 @@ mod tests {
         assert_eq!(reopened.backlog(), 1, "the outbox survives");
         assert_eq!(reopened.hours().len(), 1, "metrics survive");
         assert_eq!(reopened.batch_limit(), 17, "the learned limit survives");
+    }
+
+    #[test]
+    fn a_deferred_entry_takes_the_window_of_the_send_that_finds_it() {
+        let mut store = store();
+        let id = store
+            .add(alice(), note("one", Some("k"), None), MINUTE, ROOMY, 0)
+            .unwrap();
+        let entry = store.take(1).pop().unwrap();
+        store.defer(entry, 2 * MINUTE);
+
+        store.add(
+            alice(),
+            note("two", Some("k"), None),
+            5 * MINUTE,
+            ROOMY,
+            MINUTE,
+        );
+
+        assert_eq!(
+            store.next_due(),
+            Some(2 * MINUTE),
+            "still on II's timetable"
+        );
+        store.promote(2 * MINUTE);
+        let batch = store.take(1);
+        let (live, expired) = store.sendable(batch, 2 * MINUTE);
+        assert_eq!(
+            expired, 0,
+            "the second send is not stuck with the first window"
+        );
+        assert_eq!(live.len(), 1);
+        assert_eq!(store.content_of(id).unwrap().title, "two");
+    }
+
+    #[test]
+    fn a_refused_entry_keeps_the_window_it_was_refused_in() {
+        let mut store = store();
+        store.add(alice(), note("one", Some("k"), None), MINUTE, ROOMY, 0);
+        let entry = store.take(1).pop().unwrap();
+        store.park(entry, 0);
+
+        store.add(
+            alice(),
+            note("two", Some("k"), None),
+            5 * MINUTE,
+            ROOMY,
+            MINUTE,
+        );
+        store.promote(MINUTE);
+
+        let batch = store.take(1);
+        let (live, expired) = store.sendable(batch, MINUTE + 1);
+        assert_eq!(
+            (live.len(), expired),
+            (0, 1),
+            "one round of refusals, no more"
+        );
+    }
+
+    #[test]
+    fn nothing_queued_is_nothing_to_wake_for() {
+        let mut store = store();
+        assert_eq!(store.next_due(), None);
+
+        store.add(alice(), note("one", Some("k"), None), MINUTE, ROOMY, 0);
+        assert_eq!(store.next_due(), Some(0), "waiting, so now");
+
+        let entry = store.take(1).pop().unwrap();
+        store.defer(entry, 3 * MINUTE);
+        assert_eq!(store.next_due(), Some(3 * MINUTE), "when II asked");
     }
 }
