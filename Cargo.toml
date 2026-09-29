@@ -24,6 +24,10 @@ asset_util = { path = "asset_util" }
 candid = "0.10"
 ic-cdk = { workspace = true }
 ic-cdk-macros = "0.20"
+ic-cdk-timers = "1.0"
+ic-stable-structures = "0.7"
+# Vendored while the library repo is internal; see vendor/identity-notifications/README.md.
+identity-notifications = { path = "vendor/identity-notifications" }
 serde = { workspace = true }
 serde_bytes = "0.11"
 serde_json = "1"

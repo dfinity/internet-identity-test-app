@@ -62,6 +62,32 @@ const customMessageBtn = document.getElementById(
 ) as HTMLButtonElement;
 const messagesEl = document.getElementById("messages") as HTMLElement;
 const hostUrlEl = document.getElementById("hostUrl") as HTMLInputElement;
+const chatJoinBtn = document.getElementById("chatJoinBtn") as HTMLButtonElement;
+const chatSendBtn = document.getElementById("chatSendBtn") as HTMLButtonElement;
+const chatEditBtn = document.getElementById("chatEditBtn") as HTMLButtonElement;
+const chatLeaveBtn = document.getElementById(
+  "chatLeaveBtn",
+) as HTMLButtonElement;
+const chatClearBtn = document.getElementById(
+  "chatClearBtn",
+) as HTMLButtonElement;
+const chatStateEl = document.getElementById("chatState") as HTMLElement;
+const chatReadEl = document.getElementById("chatRead") as HTMLElement;
+const chatSectionEl = document.getElementById("chat") as HTMLElement;
+const chatTextEl = document.getElementById("chatText") as HTMLInputElement;
+const chatRoomEl = document.getElementById("chatRoom") as HTMLPreElement;
+const metricsWindowEl = document.getElementById(
+  "metricsWindow",
+) as HTMLSelectElement;
+const metricsRefreshBtn = document.getElementById(
+  "metricsRefreshBtn",
+) as HTMLButtonElement;
+const metricsSummaryEl = document.getElementById(
+  "metricsSummary",
+) as HTMLDivElement;
+const metricsFunnelEl = document.getElementById(
+  "metricsFunnel",
+) as HTMLDivElement;
 const whoAmIResponseEl = document.getElementById(
   "whoamiResponse",
 ) as HTMLDivElement;
@@ -174,6 +200,48 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     signer: IDL.Opt(IDL.Principal),
     data: IDL.Vec(IDL.Nat8),
   });
+  const CountsIdl = IDL.Record({
+    queued: IDL.Nat64,
+    accepted: IDL.Nat64,
+    received: IDL.Nat64,
+    opened: IDL.Nat64,
+    dropped: IDL.Nat64,
+    deferred: IDL.Nat64,
+  });
+  const Bucket = IDL.Record({
+    start: IDL.Nat64,
+    counts: CountsIdl,
+  });
+  const Funnel = IDL.Record({ name: IDL.Text, counts: CountsIdl });
+  const NotificationMetrics = IDL.Record({
+    hours: IDL.Vec(Bucket),
+    funnels: IDL.Vec(Funnel),
+    backlog: IDL.Nat64,
+    misconfigured: IDL.Opt(
+      IDL.Record({
+        why: IDL.Variant({
+          Origin: IDL.Null,
+          Sender: IDL.Null,
+          NotAuthorizedSender: IDL.Null,
+        }),
+        since: IDL.Nat64,
+      }),
+    ),
+  });
+  const Room = IDL.Record({
+    members: IDL.Vec(
+      IDL.Record({ who: IDL.Principal, last_active: IDL.Nat64 }),
+    ),
+    messages: IDL.Vec(
+      IDL.Record({
+        from: IDL.Principal,
+        text: IDL.Text,
+        at: IDL.Nat64,
+        sequence: IDL.Nat64,
+      }),
+    ),
+    sent: IDL.Nat64,
+  });
   return IDL.Service({
     http_request: IDL.Func([HttpRequest], [HttpResponse], ["query"]),
     update_alternative_origins: IDL.Func(
@@ -184,6 +252,15 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     update_app_metadata: IDL.Func([IDL.Text, AppMetadataMode], [], []),
     whoami: IDL.Func([], [IDL.Principal], ["query"]),
     caller_attributes: IDL.Func([], [CallerAttributes], []),
+    chat_join: IDL.Func([], [IDL.Opt(IDL.Principal)], []),
+    chat_leave: IDL.Func([], [], []),
+    chat_clear: IDL.Func([], [], []),
+    chat_seen: IDL.Func([], [], []),
+    chat_edit: IDL.Func([IDL.Nat64, IDL.Text], [], []),
+    chat_send: IDL.Func([IDL.Text], [], []),
+    chat_room: IDL.Func([], [Room], ["query"]),
+    update_notification_sender: IDL.Func([IDL.Opt(IDL.Principal)], [], []),
+    notification_metrics: IDL.Func([], [NotificationMetrics], ["query"]),
   });
 };
 
@@ -274,6 +351,8 @@ const updateDelegationView = ({
     delegationEl.innerText = "Current identity is not a DelegationIdentity";
     expirationEl.innerText = "N/A";
   }
+
+  void showChatRoom();
 };
 
 const updateAlternativeOriginsView = async () => {
@@ -751,6 +830,9 @@ const init = async () => {
 
   await updateAlternativeOriginsView();
   await updateAppMetadataView();
+  // The room is read as the page loads so its state line is right from the
+  // start; a page opened without a canister id to read it from is not.
+  await showChatRoom().catch(() => undefined);
 };
 
 window.addEventListener("DOMContentLoaded", init);
@@ -857,6 +939,320 @@ const currentIdentity = async (): Promise<Identity | undefined> => {
 const showError = (err: string) => {
   alert(err);
 };
+
+/// The Internet Identity a test is driven against is the one in the II
+/// canister id box, so the canister is told before it sends anything.
+const pointNotificationsAtII = async (actor: any) => {
+  const id = iiCanisterIdEl.value.trim();
+  await actor.update_notification_sender(
+    id === "" ? [] : [Principal.fromText(id)],
+  );
+};
+
+const testAppActor = async () => {
+  const agent = await HttpAgent.create({
+    host: hostUrlEl.value,
+    identity: await currentIdentity(),
+    shouldFetchRootKey: true,
+  });
+  return Actor.createActor(idlFactory, {
+    agent,
+    canisterId: Principal.fromText(readCanisterId()),
+  });
+};
+
+let chatJoined = false;
+let chatSending = false;
+let chatOnScreen = false;
+/// The caller's newest message, which is the one an edit rewrites.
+let chatMine: bigint | undefined;
+/// The newest message this identity has been told it has read.
+let chatSeenAt: bigint | undefined;
+
+/// Reading the room is having it in front of you: the section on screen, in a
+/// tab you are looking at.
+const chatIsBeingRead = (): boolean =>
+  chatJoined && chatOnScreen && document.visibilityState === "visible";
+
+/// A call takes a couple of seconds, and the button is the only place that
+/// shows it: it says what it is doing and refuses a second press meanwhile.
+const whileBusy = async (
+  button: HTMLButtonElement,
+  label: string,
+  run: () => Promise<void>,
+): Promise<void> => {
+  const was = button.innerText;
+  button.innerText = label;
+  button.disabled = true;
+  try {
+    await run();
+  } finally {
+    button.innerText = was;
+    button.disabled = false;
+  }
+};
+
+/// There is nothing to send until a member has typed something, and a send in
+/// flight says so — it takes a couple of seconds, and the button is the only
+/// place that shows it. An edit needs a message of the caller's own to rewrite.
+const updateSendState = () => {
+  const typed = chatTextEl.value.trim() !== "";
+  chatSendBtn.innerText = chatSending ? "Sending…" : "Send";
+  chatSendBtn.disabled = chatSending || !chatJoined || !typed;
+  chatEditBtn.disabled = chatSending || !typed || chatMine === undefined;
+};
+
+/// Whether this identity is in the room decides what it can do there: only a
+/// member can send, and only a member is notified of what others send.
+const showChatRoom = async (notice?: string) => {
+  const actor = await testAppActor();
+  const room: any = await actor.chat_room();
+  const identity = await currentIdentity();
+  const mine = identity?.getPrincipal().toText();
+  const joined =
+    mine !== undefined &&
+    room.members.some((member: any) => member.who.toText() === mine);
+
+  chatStateEl.innerText =
+    mine === undefined
+      ? "Signed out — sign in to join"
+      : joined
+        ? `Joined as ${mine}`
+        : "Not joined — join to send and to be notified";
+  // `hidden` is only the UA stylesheet's `display: none`, which this page's own
+  // `button` rule outranks, so the display is set here.
+  chatJoinBtn.style.display = joined ? "none" : "";
+  chatJoinBtn.disabled = mine === undefined;
+  chatLeaveBtn.style.display = joined ? "" : "none";
+  chatTextEl.disabled = !joined;
+  chatJoined = joined;
+  updateSendState();
+
+  chatMine = room.messages
+    .filter((message: any) => message.from.toText() === mine)
+    .at(-1)?.sequence as bigint | undefined;
+
+  const newest = room.messages.at(-1)?.at as bigint | undefined;
+  if (chatIsBeingRead() && newest !== undefined && newest !== chatSeenAt) {
+    chatSeenAt = newest;
+    await actor.chat_seen();
+    chatReadEl.innerText = `Read up to ${new Date(
+      Number(newest / BigInt(1_000_000)),
+    ).toLocaleTimeString()} — notifications cleared`;
+  }
+
+  const members = room.members
+    .map(
+      (member: any) =>
+        `${member.who.toText()}${
+          member.who.toText() === mine ? " (you)" : ""
+        } (last active ${member.last_active})`,
+    )
+    .join("\n");
+  const messages = room.messages
+    .map((message: any) => `${message.from.toText()}: ${message.text}`)
+    .join("\n");
+  const heading = notice === undefined ? "" : `${notice}\n\n`;
+  chatRoomEl.innerText = `${heading}${room.members.length} member(s)\n${members}\n\n${messages}`;
+};
+
+chatJoinBtn.addEventListener("click", async () => {
+  await whileBusy(chatJoinBtn, "Joining…", async () => {
+    const actor = await testAppActor();
+    await pointNotificationsAtII(actor);
+    const evicted: any = await actor.chat_join();
+    await showChatRoom(
+      evicted.length > 0 ? `evicted ${evicted[0].toText()}` : undefined,
+    );
+  });
+});
+
+chatClearBtn.addEventListener("click", async () => {
+  await whileBusy(chatClearBtn, "Clearing…", async () => {
+    const actor = await testAppActor();
+    await actor.chat_clear();
+    await showChatRoom();
+  });
+});
+
+chatLeaveBtn.addEventListener("click", async () => {
+  await whileBusy(chatLeaveBtn, "Leaving…", async () => {
+    const actor = await testAppActor();
+    await actor.chat_leave();
+    await showChatRoom();
+  });
+});
+
+chatSendBtn.addEventListener("click", async () => {
+  chatSending = true;
+  updateSendState();
+  try {
+    const actor = await testAppActor();
+    await actor.chat_send(chatTextEl.value.trim());
+    chatTextEl.value = "";
+    await showChatRoom();
+  } finally {
+    chatSending = false;
+    updateSendState();
+  }
+});
+
+chatEditBtn.addEventListener("click", async () => {
+  const sequence = chatMine;
+  if (sequence === undefined) {
+    return;
+  }
+  await whileBusy(chatEditBtn, "Editing…", async () => {
+    const actor = await testAppActor();
+    await actor.chat_edit(sequence, chatTextEl.value.trim());
+    chatTextEl.value = "";
+    await showChatRoom();
+  });
+  updateSendState();
+});
+
+chatTextEl.addEventListener("input", updateSendState);
+
+// Nothing tells the page that someone else has sent something, so it asks.
+setInterval(() => void showChatRoom().catch(() => undefined), 5_000);
+
+// Coming into view, or coming back to the tab, is reading the room: ask at once
+// rather than at the next poll.
+new IntersectionObserver(
+  (entries) => {
+    chatOnScreen = entries.some((entry) => entry.isIntersecting);
+    void showChatRoom().catch(() => undefined);
+  },
+  { threshold: 0.2 },
+).observe(chatSectionEl);
+
+document.addEventListener("visibilitychange", () => {
+  void showChatRoom().catch(() => undefined);
+});
+
+chatTextEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !chatSendBtn.disabled) {
+    chatSendBtn.click();
+  }
+});
+
+/// The stages a notification passes through, in order. Everything else a
+/// bucket counts is either delay or loss, and reads beneath the funnel.
+const STAGES = [
+  ["queued", "send()"],
+  ["accepted", "accepted"],
+  ["received", "received"],
+  ["opened", "opened"],
+] as const;
+
+interface Counts {
+  queued: bigint;
+  accepted: bigint;
+  received: bigint;
+  opened: bigint;
+  dropped: bigint;
+  deferred: bigint;
+}
+
+const add = (into: Counts, from: Counts): Counts => ({
+  queued: into.queued + from.queued,
+  accepted: into.accepted + from.accepted,
+  received: into.received + from.received,
+  opened: into.opened + from.opened,
+  dropped: into.dropped + from.dropped,
+  deferred: into.deferred + from.deferred,
+});
+
+const NOTHING: Counts = {
+  queued: BigInt(0),
+  accepted: BigInt(0),
+  received: BigInt(0),
+  opened: BigInt(0),
+  dropped: BigInt(0),
+  deferred: BigInt(0),
+};
+
+const share = (count: bigint, of: bigint): number =>
+  of === BigInt(0) ? 0 : (Number(count) / Number(of)) * 100;
+
+const rate = (value: number): string => `${value.toFixed(1)}%`;
+
+/// A window still taking notifications says so rather than reporting its gaps
+/// as losses: what is still moving has not been lost yet.
+const funnelHtml = (
+  counts: Counts,
+  settled: boolean,
+  title: string,
+): string => {
+  const entered = counts.queued;
+  const moving =
+    counts.queued - counts.received - counts.dropped > BigInt(0)
+      ? counts.queued - counts.received - counts.dropped
+      : BigInt(0);
+
+  const rows = STAGES.map(([field, label], stage) => {
+    const count = counts[field];
+    const of = share(count, entered);
+    const lost = stage === 0 ? undefined : counts[STAGES[stage - 1][0]] - count;
+    const drop =
+      settled && lost !== undefined && lost > BigInt(0)
+        ? `<span style="color: #a33">&darr; ${lost}</span>`
+        : "";
+    return `<div style="display: flex; align-items: center; gap: 0.5em; font-family: monospace">
+      <span style="width: 6em">${label}</span>
+      <span style="width: 3em; text-align: right">${count}</span>
+      <span style="background: #5b5bd6; height: 0.9em; width: ${Math.max(of, 0.5)}%"></span>
+      <span>${rate(of)}</span>
+      ${drop}
+    </div>`;
+  }).join("");
+
+  const note = settled
+    ? ""
+    : `<p style="font-family: monospace">${moving} still moving · ${counts.deferred} deferral(s)</p>`;
+
+  return `<p><strong>${title}</strong> · conversion ${rate(share(counts.opened, entered))}${settled ? "" : " so far"}</p>${rows}${note}`;
+};
+
+const showMetrics = async () => {
+  const actor = await testAppActor();
+  const metrics: any = await actor.notification_metrics();
+
+  const hours = Number(metricsWindowEl.value);
+  // The page targets ES2019, so no BigInt literals.
+  const hour = BigInt(3_600_000_000_000);
+  const now = BigInt(Date.now()) * BigInt(1_000_000);
+  const cutoff = now - BigInt(hours) * hour;
+  const buckets = metrics.hours.filter((bucket: any) => bucket.start >= cutoff);
+  const current = now - (now % hour);
+
+  const counts = buckets
+    .map((bucket: any) => bucket.counts as Counts)
+    .reduce(add, NOTHING);
+  // Everything but the hour that is still taking notifications has settled,
+  // near enough: a notification lives as long as the window its app gave it.
+  const settled = !buckets.some((bucket: any) => bucket.start >= current);
+
+  const funnels = (metrics.funnels as { name: string; counts: Counts }[])
+    .map((funnel) => funnelHtml(funnel.counts, true, `funnel ${funnel.name}`))
+    .join("");
+
+  metricsFunnelEl.innerHTML =
+    funnelHtml(counts, settled, `last ${hours}h`) + funnels;
+
+  const misconfigured =
+    metrics.misconfigured.length > 0
+      ? `, misconfigured: ${Object.keys(metrics.misconfigured[0].why)[0]}`
+      : "";
+  metricsSummaryEl.innerText = `backlog ${metrics.backlog}, ${buckets.length} hour(s) with traffic${misconfigured}`;
+};
+
+metricsRefreshBtn.addEventListener("click", () => {
+  void showMetrics();
+});
+metricsWindowEl.addEventListener("change", () => {
+  void showMetrics();
+});
 
 /// `JSON.stringify` renders an Error as `{}`, so a real failure used to read as
 /// no failure at all. Name the error, and keep whatever a non-Error carries.
