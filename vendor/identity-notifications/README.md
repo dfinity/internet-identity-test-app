@@ -2,7 +2,7 @@
 
 A copy of the `rust/` crate from
 [dfinity/identity-notifications](https://github.com/dfinity/identity-notifications)
-at `47bb523`, source only: no tests, no examples, no workspace.
+at `0aa141d`, source only: no tests, no examples, no workspace.
 
 It is here because that repository is internal and this one is public, so CI
 cannot fetch it as a git dependency. Replace this directory with a normal

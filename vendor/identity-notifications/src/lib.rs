@@ -130,28 +130,36 @@ fn with_store<T>(f: impl FnOnce(&mut Store) -> T) -> Option<T> {
 pub fn send(recipient: Principal, notification: Notification) {
     let now = time();
 
+    // The app asked, so the hour and the funnel it asked in count the ask,
+    // whether or not there is anything to send it through.
+    let funnel = with_store(|store| {
+        let funnel = store.funnel_of(&notification);
+        store.record(now, Event::Queued, 1);
+        store.record_in_funnel(funnel, Event::Queued, 1);
+        funnel
+    })
+    .unwrap_or_default();
+    let dropped = |store: &mut Store| {
+        store.record(now, Event::Dropped, 1);
+        store.record_in_funnel(funnel, Event::Dropped, 1);
+    };
+
     let config = match configured() {
         Ok(config) => config,
         Err(why) => {
             note(why, now);
-            with_store(|store| store.record(now, Event::Dropped, 1));
+            with_store(dropped);
             return;
         }
     };
 
     if sender(&config).is_none() {
         note(Misconfigured::Sender, now);
-        with_store(|store| store.record(now, Event::Dropped, 1));
+        with_store(dropped);
         return;
     }
 
     let added = with_store(|store| {
-        // The app asked, so the funnel it asked in counts the ask, whether or
-        // not there is room to queue it.
-        let funnel = store.funnel_of(&notification);
-        store.record(now, Event::Queued, 1);
-        store.record_in_funnel(funnel, Event::Queued, 1);
-
         let added = store.add(
             recipient,
             notification,
@@ -160,8 +168,7 @@ pub fn send(recipient: Principal, notification: Notification) {
             now,
         );
         if added.is_none() {
-            store.record(now, Event::Dropped, 1);
-            store.record_in_funnel(funnel, Event::Dropped, 1);
+            dropped(store);
         }
         added
     });
