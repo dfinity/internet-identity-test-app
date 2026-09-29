@@ -56,15 +56,32 @@ type Room = record {
     sent: nat64;
 };
 
+/// What became of a set of notifications, counted once each and attributed to
+/// where they came in, so the stages read as one funnel.
+type Counts = record {
+    /// Every call the app made to send, including one the ceiling refused.
+    queued: nat64;
+    accepted: nat64;
+    received: nat64;
+    /// Somebody acted on it, which is the only stage that says the
+    /// notification did its job.
+    opened: nat64;
+    /// Given up on: never accepted before its window closed, or accepted and
+    /// expired without any channel showing it.
+    dropped: nat64;
+    /// Delay rather than loss: how often Internet Identity asked for one to
+    /// come back later.
+    deferred: nat64;
+};
+
 type Bucket = record {
     /// The instant the hour begins, nanoseconds since the epoch.
     start: nat64;
-    sent: nat64;
-    accepted: nat64;
-    deferred: nat64;
-    received: nat64;
-    dropped: nat64;
+    counts: Counts;
 };
+
+/// What became of the notifications an app labelled with one funnel name.
+type Funnel = record { name: text; counts: Counts };
 
 type Misconfigured = variant { Origin; Sender; NotAuthorizedSender };
 
@@ -73,6 +90,8 @@ type MisconfiguredSince = record { why: Misconfigured; since: nat64 };
 type NotificationMetrics = record {
     /// Up to 720 buckets, oldest first. Hours with no traffic are absent.
     hours: vec Bucket;
+    /// One per funnel an app has labelled, until it forgets it.
+    funnels: vec Funnel;
     /// Notifications waiting for Internet Identity to accept them.
     backlog: nat64;
     misconfigured: opt MisconfiguredSince;
@@ -114,6 +133,10 @@ service : (opt InitArg) -> {
   chat_leave: () -> ();
   /// Empties the room: every member is kicked out and every message goes.
   chat_clear: () -> ();
+  /// Rewrites one of the caller's own messages, which notifies the room again
+  /// under the same key: a recipient's notification carries the new text,
+  /// replaced in place rather than stacked beside the old one.
+  chat_edit: (nat64, text) -> ();
   /// The caller is looking at the room, so a notification about it is dismissed:
   /// a browser not yet woken for it shows nothing, and one already showing it
   /// closes it on its next wake-up.

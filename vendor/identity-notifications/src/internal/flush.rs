@@ -34,8 +34,6 @@ pub fn arg(origin: &str, batch: &[Entry]) -> ii::SendNotificationArg {
 
 /// Applies an outcome to the batch that produced it.
 pub fn apply(store: &mut Store, batch: Vec<Entry>, outcome: Outcome, now: u64) {
-    store.record(now, Event::Sent, batch.len() as u64);
-
     match outcome {
         Outcome::Answered(not_accepted) => {
             let refused: HashMap<u64, ii::NotAcceptedReason> = not_accepted
@@ -43,24 +41,21 @@ pub fn apply(store: &mut Store, batch: Vec<Entry>, outcome: Outcome, now: u64) {
                 .map(|entry| (entry.id, entry.reason))
                 .collect();
 
-            store.record(
-                now,
-                Event::Accepted,
-                (batch.len() - not_accepted.len()) as u64,
-            );
-
             for entry in batch {
                 match refused.get(&entry.id) {
-                    None => store.settle(&entry),
+                    None => {
+                        store.record_for(&entry, Event::Accepted, 1);
+                        store.settle(&entry);
+                    }
                     Some(ii::NotAcceptedReason::Deferred { retry_after }) => {
-                        store.record(now, Event::Deferred, 1);
+                        store.record_for(&entry, Event::Deferred, 1);
                         store.defer(entry, *retry_after);
                     }
                     // No such recipient, or no channel: the user fixes both,
                     // and has until the notification expires to do it.
                     Some(_) => {
                         if !store.park(entry, now) {
-                            store.record(now, Event::Dropped, 1);
+                            store.record_for(&entry, Event::Dropped, 1);
                         }
                     }
                 }

@@ -3,7 +3,7 @@
 use super::ids;
 use super::keys::{self, EntryKey};
 use crate::types::{
-    Bucket, Content, Misconfigured, MisconfiguredSince, Notification, NotificationId,
+    Bucket, Content, Funnel, Misconfigured, MisconfiguredSince, Notification, NotificationId,
 };
 use candid::{CandidType, Decode, Encode, Principal};
 use ic_stable_structures::memory_manager::{MemoryId, MemoryManager, VirtualMemory};
@@ -42,6 +42,18 @@ pub struct Entry {
     pub due_at: u64,
     /// Its one second attempt has been spent.
     pub retried: bool,
+    /// A channel has told the app it showed this one, so a second channel
+    /// showing it too is not a second delivery to count.
+    pub received: bool,
+    /// The hour this notification was queued in, which is the hour every step
+    /// it takes afterwards is counted in: a bucket is one cohort, not one
+    /// hour's worth of unrelated events.
+    pub queued_hour: u32,
+    /// The funnel its app named, or none.
+    pub funnel: u16,
+    /// Somebody acted on the notification a channel showed, which is the last
+    /// thing that happens to one and the only stage the app can be sure of.
+    pub opened: bool,
 }
 
 /// When the second attempt a refusal earns is made: late enough to leave the
@@ -101,6 +113,12 @@ impl Storable for Row {
                 bytes.push(u8::from(entry.retried));
                 bytes.push(who.len() as u8);
                 bytes.extend_from_slice(who);
+                // Last, so a row written before they existed still reads: what
+                // is not there was not received, in no hour and no funnel.
+                bytes.push(u8::from(entry.received));
+                bytes.extend_from_slice(&entry.queued_hour.to_be_bytes());
+                bytes.extend_from_slice(&entry.funnel.to_be_bytes());
+                bytes.push(u8::from(entry.opened));
             }
             Row::Slot(slot) => {
                 bytes.push(1);
@@ -120,6 +138,14 @@ impl Storable for Row {
     fn from_bytes(bytes: Cow<[u8]>) -> Self {
         let word =
             |from: usize| u64::from_be_bytes(bytes[from..from + 8].try_into().expect("bounded"));
+        let four = |from: usize| match bytes.get(from..from + 4) {
+            Some(slice) => u32::from_be_bytes(slice.try_into().expect("four bytes")),
+            None => 0,
+        };
+        let two = |from: usize| match bytes.get(from..from + 2) {
+            Some(slice) => u16::from_be_bytes(slice.try_into().expect("two bytes")),
+            None => 0,
+        };
         match bytes[0] {
             0 => {
                 let length = usize::from(bytes[27]);
@@ -130,6 +156,10 @@ impl Storable for Row {
                     lane: bytes[25],
                     retried: bytes[26] == 1,
                     recipient: Principal::from_slice(&bytes[28..28 + length]),
+                    received: bytes.get(28 + length).copied().unwrap_or(0) == 1,
+                    queued_hour: four(29 + length),
+                    funnel: two(33 + length),
+                    opened: bytes.get(35 + length).copied().unwrap_or(0) == 1,
                 })
             }
             _ => Row::Slot(Slot {
@@ -173,14 +203,27 @@ candid_storable!(StoredContent, 8_192);
 
 /// A row of the metrics map: an hour of the pipeline, or the library's
 /// counters under `COUNTERS_ROW`. Hour zero is the epoch, so never a bucket.
-#[derive(CandidType, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(CandidType, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum MetricsRow {
     Hour(Bucket),
     Counters(Meta),
+    /// A funnel an app named, and what became of what it labelled.
+    Funnel(Funnel),
 }
 candid_storable!(MetricsRow, 256);
 
-const COUNTERS_ROW: u64 = 0;
+/// An hour's row is keyed by its start in nanoseconds, so the counters and the
+/// funnels take the top of the key space, which no hour reaches for another
+/// half a trillion years.
+const COUNTERS_ROW: u64 = u64::MAX;
+const FUNNEL_BASE: u64 = u64::MAX - u16::MAX as u64 - 1;
+
+/// Kept whole in its row, which candid bounds at 256 bytes.
+const MAX_LABEL: usize = 64;
+
+const fn funnel_row(funnel: u16) -> u64 {
+    FUNNEL_BASE + funnel as u64
+}
 
 #[derive(CandidType, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Meta {
@@ -201,8 +244,9 @@ pub struct Store {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Event {
-    Sent,
+    Queued,
     Accepted,
+    Opened,
     Deferred,
     Received,
     Dropped,
@@ -228,6 +272,15 @@ impl Store {
         self.rows.insert(COUNTERS_ROW, MetricsRow::Counters(meta));
     }
 
+    /// The funnel a notification names, whether or not it is ever queued, so a
+    /// call the ceiling refuses still counts where the app asked it to.
+    pub fn funnel_of(&mut self, notification: &Notification) -> u16 {
+        match notification.funnel.as_deref() {
+            Some(name) if !name.is_empty() => self.funnel_id(name),
+            _ => 0,
+        }
+    }
+
     /// Adds a notification, or replaces the one its key already names.
     /// `None` when the capacity ceiling refused it.
     pub fn add(
@@ -239,6 +292,8 @@ impl Store {
         now: u64,
     ) -> Option<NotificationId> {
         self.sweep(now);
+
+        let funnel = self.funnel_of(&notification);
 
         let mut meta = self.meta();
 
@@ -299,6 +354,10 @@ impl Store {
             expires_at,
             due_at: now,
             retried: false,
+            received: false,
+            queued_hour: (now / HOUR) as u32,
+            funnel,
+            opened: false,
         };
         self.place(entry, keys::WAITING, entry.expires_at);
 
@@ -431,6 +490,9 @@ impl Store {
 
         for entry in batch {
             if entry.expires_at <= now {
+                // Its window closed with Internet Identity never having taken
+                // it, which is the cohort it came in with losing one.
+                self.record_for(&entry, Event::Dropped, 1);
                 self.unplace(entry.id);
                 self.release(entry.id);
                 expired += 1;
@@ -447,15 +509,23 @@ impl Store {
     /// Drops what an expired notification was still holding. Internet Identity
     /// will not pull content it can no longer deliver.
     pub fn sweep(&mut self, now: u64) {
-        let expired: Vec<NotificationId> = self
+        let expired: Vec<Entry> = self
             .entries
             .range(EntryKey::accepted_start()..=EntryKey::accepted_expired_by(now))
-            .map(|row| row.key().id())
+            .filter_map(|row| match row.value() {
+                Row::Entry(entry) => Some(entry),
+                Row::Slot(_) => None,
+            })
             .collect();
 
-        for id in expired {
-            self.unplace(id);
-            self.release(id);
+        for entry in expired {
+            // Internet Identity held it and no channel ever showed it, which is
+            // the delivery pipeline's quietest loss.
+            if !entry.received {
+                self.record_for(&entry, Event::Dropped, 1);
+            }
+            self.unplace(entry.id);
+            self.release(entry.id);
         }
     }
 
@@ -465,6 +535,45 @@ impl Store {
         let id = ids::keyed(recipient, key);
         self.unplace(id);
         self.release(id);
+    }
+
+    /// Whether this is the first channel to report showing the notification.
+    /// Every channel a recipient has is woken for it, so the report comes once
+    /// per channel and the delivery is counted on the first.
+    pub fn mark_received(&mut self, id: NotificationId) -> bool {
+        let Some(slot) = self.slot_of(id) else {
+            return false;
+        };
+        let Some(Row::Entry(mut entry)) = self.entries.get(&slot.key(id)) else {
+            return false;
+        };
+        if entry.received {
+            return false;
+        }
+
+        entry.received = true;
+        self.entries.insert(slot.key(id), Row::Entry(entry));
+        true
+    }
+
+    /// Whether this is the first time somebody acted on the notification.
+    /// Counted once, like a delivery: several channels may show it, and the
+    /// person opens it on one of them.
+    pub fn mark_opened(&mut self, id: NotificationId) -> bool {
+        let Some(slot) = self.slot_of(id) else {
+            return false;
+        };
+        let Some(Row::Entry(mut entry)) = self.entries.get(&slot.key(id)) else {
+            return false;
+        };
+        if entry.opened {
+            return false;
+        }
+
+        entry.opened = true;
+        self.entries.insert(slot.key(id), Row::Entry(entry));
+        self.record_for(&entry, Event::Opened, 1);
+        true
     }
 
     pub fn content_of(&self, id: NotificationId) -> Option<Content> {
@@ -516,33 +625,60 @@ impl Store {
         }
     }
 
+    /// Counts an event in the hour a notification came in, which is the hour it
+    /// is counted in whenever its step happens, and in the funnel its app named.
+    pub fn record_for(&mut self, entry: &Entry, event: Event, count: u64) {
+        self.bump(u64::from(entry.queued_hour) * HOUR, event, count);
+        if entry.funnel != 0 {
+            self.bump(funnel_row(entry.funnel), event, count);
+        }
+    }
+
+    /// Counts an event in the hour it happens, which for a notification coming
+    /// in is the hour it belongs to.
     pub fn record(&mut self, now: u64, event: Event, count: u64) {
-        let start = now - (now % HOUR);
-        let mut bucket = match self.rows.get(&start) {
-            Some(MetricsRow::Hour(bucket)) => bucket,
-            _ => Bucket {
-                start,
+        self.bump(now - (now % HOUR), event, count);
+    }
+
+    /// The same count in a funnel row, for a notification whose label is known
+    /// before its entry exists.
+    pub fn record_in_funnel(&mut self, funnel: u16, event: Event, count: u64) {
+        if funnel != 0 {
+            self.bump(funnel_row(funnel), event, count);
+        }
+    }
+
+    fn bump(&mut self, key: u64, event: Event, count: u64) {
+        let mut row = match self.rows.get(&key) {
+            Some(row) => row,
+            // A funnel the app has forgotten is not brought back by a
+            // notification still carrying it.
+            None if key >= FUNNEL_BASE => return,
+            None => MetricsRow::Hour(Bucket {
+                start: key,
                 ..Bucket::default()
-            },
+            }),
         };
 
+        let counts = match &mut row {
+            MetricsRow::Hour(bucket) => &mut bucket.counts,
+            MetricsRow::Funnel(funnel) => &mut funnel.counts,
+            MetricsRow::Counters(_) => return,
+        };
         match event {
-            Event::Sent => bucket.sent += count,
-            Event::Accepted => bucket.accepted += count,
-            Event::Deferred => bucket.deferred += count,
-            Event::Received => bucket.received += count,
-            Event::Dropped => bucket.dropped += count,
+            Event::Queued => counts.queued += count,
+            Event::Accepted => counts.accepted += count,
+            Event::Deferred => counts.deferred += count,
+            Event::Received => counts.received += count,
+            Event::Opened => counts.opened += count,
+            Event::Dropped => counts.dropped += count,
         }
 
-        self.rows.insert(start, MetricsRow::Hour(bucket));
+        self.rows.insert(key, row);
 
         // One row is the counters rather than an hour.
-        while self.rows.len() as usize > KEEP_HOURS + 1 {
-            let oldest = self
-                .rows
-                .range(COUNTERS_ROW + 1..)
-                .next()
-                .map(|row| *row.key());
+        while self.hour_rows() > KEEP_HOURS {
+            let oldest = self.rows.range(..FUNNEL_BASE).next().map(|row| *row.key());
             match oldest {
                 Some(hour) => {
                     self.rows.remove(&hour);
@@ -554,12 +690,68 @@ impl Store {
 
     pub fn hours(&self) -> Vec<Bucket> {
         self.rows
-            .range(COUNTERS_ROW + 1..)
+            .range(..FUNNEL_BASE)
             .filter_map(|row| match row.value() {
                 MetricsRow::Hour(bucket) => Some(bucket),
-                MetricsRow::Counters(_) => None,
+                MetricsRow::Counters(_) | MetricsRow::Funnel(_) => None,
             })
             .collect()
+    }
+
+    fn hour_rows(&self) -> usize {
+        self.rows.range(..FUNNEL_BASE).count()
+    }
+
+    pub fn funnels(&self) -> Vec<Funnel> {
+        self.rows
+            .range(FUNNEL_BASE..COUNTERS_ROW)
+            .filter_map(|row| match row.value() {
+                MetricsRow::Funnel(funnel) => Some(funnel),
+                MetricsRow::Counters(_) | MetricsRow::Hour(_) => None,
+            })
+            .collect()
+    }
+
+    /// The row this label counts in, opening one where the app has not used it
+    /// before. `0` is no funnel at all.
+    pub fn funnel_id(&mut self, name: &str) -> u16 {
+        let name: String = name.chars().take(MAX_LABEL).collect();
+        let mut next = funnel_row(1);
+        for row in self.rows.range(FUNNEL_BASE..COUNTERS_ROW) {
+            if let MetricsRow::Funnel(funnel) = row.value() {
+                if funnel.name == name {
+                    return (*row.key() - FUNNEL_BASE) as u16;
+                }
+            }
+            next = *row.key() + 1;
+        }
+        if next == COUNTERS_ROW {
+            return 0;
+        }
+
+        self.rows.insert(
+            next,
+            MetricsRow::Funnel(Funnel {
+                name,
+                ..Funnel::default()
+            }),
+        );
+        (next - FUNNEL_BASE) as u16
+    }
+
+    /// Drops a funnel's row. What it counted goes with it, and notifications
+    /// still carrying it are counted in their hour alone.
+    pub fn forget_funnel(&mut self, name: &str) {
+        let row = self
+            .rows
+            .range(FUNNEL_BASE..COUNTERS_ROW)
+            .find_map(|row| match row.value() {
+                MetricsRow::Funnel(funnel) if funnel.name == name => Some(*row.key()),
+                _ => None,
+            });
+        if let Some(key) = row {
+            self.rows.remove(&key);
+        }
     }
 
     /// Carries a fresh window to an entry that is still queued, leaving where it
@@ -934,16 +1126,16 @@ mod tests {
     #[test]
     fn hours_accumulate_and_the_ring_keeps_a_month() {
         let mut store = store();
-        store.record(5 * HOUR + 1, Event::Sent, 3);
+        store.record(5 * HOUR + 1, Event::Queued, 3);
         store.record(5 * HOUR + 2_000, Event::Accepted, 2);
 
         let hours = store.hours();
         assert_eq!(hours.len(), 1);
-        assert_eq!((hours[0].sent, hours[0].accepted), (3, 2));
+        assert_eq!((hours[0].counts.queued, hours[0].counts.accepted), (3, 2));
         assert_eq!(hours[0].start, 5 * HOUR);
 
         for hour in 0..800u64 {
-            store.record(hour * HOUR, Event::Sent, 1);
+            store.record(hour * HOUR, Event::Queued, 1);
         }
         let ring = store.hours();
         assert_eq!(ring.len(), KEEP_HOURS);
@@ -957,7 +1149,7 @@ mod tests {
         let id = {
             let mut store = Store::new(manager, MEMORY_IDS);
             store.add(alice(), note("pending", Some("k"), None), HOUR, ROOMY, 0);
-            store.record(HOUR, Event::Sent, 1);
+            store.record(HOUR, Event::Queued, 1);
             store.set_batch_limit(17);
             ids::keyed(alice(), "k")
         };
@@ -1038,5 +1230,108 @@ mod tests {
         let entry = store.take(1).pop().unwrap();
         store.defer(entry, 3 * MINUTE);
         assert_eq!(store.next_due(), Some(3 * MINUTE), "when II asked");
+    }
+
+    #[test]
+    fn a_step_counts_in_the_hour_the_notification_came_in() {
+        let mut store = store();
+        store.record(0, Event::Queued, 1);
+        store.add(alice(), note("one", Some("k"), None), 2 * HOUR, ROOMY, 0);
+        let entry = store.take(1).pop().unwrap();
+
+        // Accepted an hour after it was queued, which is a different bucket.
+        store.record_for(&entry, Event::Accepted, 1);
+
+        let hours = store.hours();
+        assert_eq!(hours.len(), 1, "one cohort, not two");
+        assert_eq!((hours[0].counts.queued, hours[0].counts.accepted), (1, 1));
+    }
+
+    #[test]
+    fn a_delivery_counts_once_however_many_channels_show_it() {
+        let mut store = store();
+        let id = store
+            .add(alice(), note("one", Some("k"), None), HOUR, ROOMY, 0)
+            .unwrap();
+
+        assert!(store.mark_received(id), "the first channel to report it");
+        assert!(!store.mark_received(id), "the second is the same delivery");
+    }
+
+    #[test]
+    fn a_notification_no_channel_ever_showed_is_a_drop() {
+        let mut store = store();
+        store.add(alice(), note("one", Some("k"), None), HOUR, ROOMY, 0);
+        let entry = store.take(1).pop().unwrap();
+        store.settle(&entry);
+
+        store.sweep(HOUR);
+
+        let hours = store.hours();
+        assert_eq!(hours[0].counts.dropped, 1);
+    }
+
+    #[test]
+    fn a_delivered_notification_expiring_is_no_drop() {
+        let mut store = store();
+        let id = store
+            .add(alice(), note("one", Some("k"), None), HOUR, ROOMY, 0)
+            .unwrap();
+        let entry = store.take(1).pop().unwrap();
+        store.settle(&entry);
+        assert!(store.mark_received(id));
+
+        store.sweep(HOUR);
+
+        assert!(store.hours().iter().all(|hour| hour.counts.dropped == 0));
+    }
+
+    #[test]
+    fn an_open_counts_once_and_only_while_the_window_is_open() {
+        let mut store = store();
+        let id = store
+            .add(alice(), note("one", Some("k"), None), HOUR, ROOMY, 0)
+            .unwrap();
+        let entry = store.take(1).pop().unwrap();
+        store.settle(&entry);
+
+        assert!(store.mark_opened(id), "somebody acted on it");
+        assert!(!store.mark_opened(id), "and cannot act on it twice");
+        assert_eq!(store.hours()[0].counts.opened, 1);
+
+        store.sweep(HOUR);
+        assert!(!store.mark_opened(id), "its window has closed");
+        assert_eq!(store.hours()[0].counts.opened, 1);
+    }
+
+    #[test]
+    fn a_labelled_notification_counts_in_its_funnel_and_its_hour() {
+        let mut store = store();
+        let mut labelled = note("one", Some("k"), None);
+        labelled.funnel = Some("promo".into());
+        store.add(alice(), labelled, HOUR, ROOMY, 0);
+        let entry = store.take(1).pop().unwrap();
+        store.record_for(&entry, Event::Accepted, 1);
+
+        let funnels = store.funnels();
+        assert_eq!(funnels.len(), 1);
+        assert_eq!(funnels[0].name, "promo");
+        assert_eq!(funnels[0].counts.accepted, 1);
+        assert_eq!(store.hours()[0].counts.accepted, 1, "and in its hour");
+    }
+
+    #[test]
+    fn a_forgotten_funnel_takes_its_counts_and_is_not_reopened() {
+        let mut store = store();
+        let mut labelled = note("one", Some("k"), None);
+        labelled.funnel = Some("promo".into());
+        store.add(alice(), labelled, HOUR, ROOMY, 0);
+        let entry = store.take(1).pop().unwrap();
+
+        store.forget_funnel("promo");
+        store.record_for(&entry, Event::Accepted, 1);
+
+        assert!(store.funnels().is_empty());
+        assert_eq!(store.hours()[0].counts.accepted, 1, "its hour still counts");
     }
 }

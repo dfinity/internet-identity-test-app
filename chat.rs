@@ -161,12 +161,49 @@ pub fn chat_send(text: String) {
         )
     });
 
-    for member in members.into_iter().filter(|member| *member != caller) {
+    notify(&members, caller, sequence, &text);
+}
+
+/// Rewrites one of the caller's own messages and notifies the room again under
+/// the same key, so a recipient's notification carries the new text: replaced
+/// in the outbox where it is still waiting, and replaced on screen where it has
+/// already been shown.
+#[update]
+pub fn chat_edit(sequence: u64, text: String) {
+    let caller = msg_caller();
+    let now = time();
+    let text: String = text.chars().take(MAX_TEXT).collect();
+
+    let members = ROOM.with_borrow_mut(|room| {
+        let Some(message) = room
+            .messages
+            .iter_mut()
+            .find(|message| message.sequence == sequence && message.from == caller)
+        else {
+            return Vec::new();
+        };
+        message.text = text.clone();
+
+        if let Some(member) = room.members.iter_mut().find(|member| member.who == caller) {
+            member.last_active = now;
+        }
+        room.members
+            .iter()
+            .map(|member| member.who)
+            .collect::<Vec<_>>()
+    });
+
+    notify(&members, caller, sequence, &text);
+}
+
+/// Everyone in the room but whoever wrote it.
+fn notify(members: &[Principal], author: Principal, sequence: u64, text: &str) {
+    for member in members.iter().filter(|member| **member != author) {
         notifications::send(
-            member,
+            *member,
             Notification {
                 title: "New message".to_string(),
-                body: text.clone(),
+                body: text.to_string(),
                 url: chat_url(),
                 key: Some(key_of(sequence)),
                 ..Default::default()
