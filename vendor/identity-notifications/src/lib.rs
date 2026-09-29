@@ -146,21 +146,29 @@ pub fn send(recipient: Principal, notification: Notification) {
     }
 
     let added = with_store(|store| {
-        store.add(
+        // The app asked, so the funnel it asked in counts the ask, whether or
+        // not there is room to queue it.
+        let funnel = store.funnel_of(&notification);
+        store.record(now, Event::Queued, 1);
+        store.record_in_funnel(funnel, Event::Queued, 1);
+
+        let added = store.add(
             recipient,
             notification,
             now + II_DEFAULT_RETENTION_NS,
             config.capacity_bytes as u64,
             now,
-        )
+        );
+        if added.is_none() {
+            store.record(now, Event::Dropped, 1);
+            store.record_in_funnel(funnel, Event::Dropped, 1);
+        }
+        added
     });
 
-    match added {
-        Some(Some(_)) => arm(),
-        // Refused by the ceiling, or `init` was never called.
-        Some(None) | None => {
-            with_store(|store| store.record(now, Event::Dropped, 1));
-        }
+    // Refused by the ceiling, or `init` was never called: nothing to wake for.
+    if let Some(Some(_)) = added {
+        arm();
     }
 }
 
@@ -172,6 +180,20 @@ pub fn set_sender(sender: Option<Principal>) {
     SENDER.set(sender);
 }
 
+/// Records that somebody acted on the notification a channel showed them.
+pub fn notification_opened(id: NotificationId) {
+    if sender_info().is_none() {
+        return;
+    }
+    with_store(|store| store.mark_opened(id));
+}
+
+/// Drops a funnel's row. What it counted goes with it, and notifications still
+/// carrying it are counted in their hour alone.
+pub fn forget_funnel(name: &str) {
+    with_store(|store| store.forget_funnel(name));
+}
+
 /// This notification no longer needs anyone's attention.
 pub fn dismiss(recipient: Principal, key: &str) {
     with_store(|store| store.dismiss(recipient, key));
@@ -181,11 +203,13 @@ pub fn dismiss(recipient: Principal, key: &str) {
 pub fn metrics() -> Metrics {
     with_store(|store| Metrics {
         hours: store.hours(),
+        funnels: store.funnels(),
         backlog: store.backlog(),
         misconfigured: store.misconfigured(),
     })
     .unwrap_or(Metrics {
         hours: Vec::new(),
+        funnels: Vec::new(),
         backlog: 0,
         misconfigured: None,
     })
@@ -205,7 +229,7 @@ pub fn notification_received(id: NotificationId) {
     }
     let now = time();
     with_store(|store| {
-        if store.holds(id) {
+        if store.holds(id) && store.mark_received(id) {
             store.record(now, Event::Received, 1);
         }
     });
@@ -230,6 +254,11 @@ macro_rules! endpoints {
         #[ic_cdk::update]
         fn _internet_identity_notification_received(id: u64) {
             $crate::notification_received(id)
+        }
+
+        #[ic_cdk::update]
+        fn _internet_identity_notification_opened(id: u64) {
+            $crate::notification_opened(id)
         }
     };
 }
@@ -313,10 +342,7 @@ async fn flush_once() {
         store.sweep(now);
         store.promote(now);
         let batch = store.take(store.batch_limit());
-        let (live, expired) = store.sendable(batch, now);
-        if expired > 0 {
-            store.record(now, Event::Dropped, expired as u64);
-        }
+        let (live, _expired) = store.sendable(batch, now);
         live
     })
     .unwrap_or_default();

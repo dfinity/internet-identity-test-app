@@ -408,6 +408,7 @@
           <label for="chatText" style="display: inline-block">Message:</label>
           <input type="text" id="chatText" disabled />
           <button id="chatSendBtn" disabled>Send</button>
+          <button id="chatEditBtn" disabled>Edit last</button>
         </div>
         <pre id="chatRoom"></pre>
       </section>
@@ -425,14 +426,8 @@
           </select>
           <button id="metricsRefreshBtn">Refresh</button>
         </div>
-        <p>
-          <span style="color: #888">sent</span>
-          <span style="color: #2a7">accepted</span>
-          <span style="color: #27a">received</span>
-          <span style="color: #a33">dropped</span>
-        </p>
         <div id="metricsSummary"></div>
-        <div id="metricsChart"></div>
+        <div id="metricsFunnel"></div>
       </section>
       <section id="root-vc-flow"></section>
       <section>

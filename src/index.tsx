@@ -64,6 +64,7 @@ const messagesEl = document.getElementById("messages") as HTMLElement;
 const hostUrlEl = document.getElementById("hostUrl") as HTMLInputElement;
 const chatJoinBtn = document.getElementById("chatJoinBtn") as HTMLButtonElement;
 const chatSendBtn = document.getElementById("chatSendBtn") as HTMLButtonElement;
+const chatEditBtn = document.getElementById("chatEditBtn") as HTMLButtonElement;
 const chatLeaveBtn = document.getElementById(
   "chatLeaveBtn",
 ) as HTMLButtonElement;
@@ -84,8 +85,8 @@ const metricsRefreshBtn = document.getElementById(
 const metricsSummaryEl = document.getElementById(
   "metricsSummary",
 ) as HTMLDivElement;
-const metricsChartEl = document.getElementById(
-  "metricsChart",
+const metricsFunnelEl = document.getElementById(
+  "metricsFunnel",
 ) as HTMLDivElement;
 const whoAmIResponseEl = document.getElementById(
   "whoamiResponse",
@@ -199,16 +200,22 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     signer: IDL.Opt(IDL.Principal),
     data: IDL.Vec(IDL.Nat8),
   });
+  const CountsIdl = IDL.Record({
+    queued: IDL.Nat64,
+    accepted: IDL.Nat64,
+    received: IDL.Nat64,
+    opened: IDL.Nat64,
+    dropped: IDL.Nat64,
+    deferred: IDL.Nat64,
+  });
   const Bucket = IDL.Record({
     start: IDL.Nat64,
-    sent: IDL.Nat64,
-    accepted: IDL.Nat64,
-    deferred: IDL.Nat64,
-    received: IDL.Nat64,
-    dropped: IDL.Nat64,
+    counts: CountsIdl,
   });
+  const Funnel = IDL.Record({ name: IDL.Text, counts: CountsIdl });
   const NotificationMetrics = IDL.Record({
     hours: IDL.Vec(Bucket),
+    funnels: IDL.Vec(Funnel),
     backlog: IDL.Nat64,
     misconfigured: IDL.Opt(
       IDL.Record({
@@ -249,6 +256,7 @@ const idlFactory = ({ IDL }: { IDL: any }) => {
     chat_leave: IDL.Func([], [], []),
     chat_clear: IDL.Func([], [], []),
     chat_seen: IDL.Func([], [], []),
+    chat_edit: IDL.Func([IDL.Nat64, IDL.Text], [], []),
     chat_send: IDL.Func([IDL.Text], [], []),
     chat_room: IDL.Func([], [Room], ["query"]),
     update_notification_sender: IDL.Func([IDL.Opt(IDL.Principal)], [], []),
@@ -956,6 +964,8 @@ const testAppActor = async () => {
 let chatJoined = false;
 let chatSending = false;
 let chatOnScreen = false;
+/// The caller's newest message, which is the one an edit rewrites.
+let chatMine: bigint | undefined;
 /// The newest message this identity has been told it has read.
 let chatSeenAt: bigint | undefined;
 
@@ -984,11 +994,12 @@ const whileBusy = async (
 
 /// There is nothing to send until a member has typed something, and a send in
 /// flight says so — it takes a couple of seconds, and the button is the only
-/// place that shows it.
+/// place that shows it. An edit needs a message of the caller's own to rewrite.
 const updateSendState = () => {
+  const typed = chatTextEl.value.trim() !== "";
   chatSendBtn.innerText = chatSending ? "Sending…" : "Send";
-  chatSendBtn.disabled =
-    chatSending || !chatJoined || chatTextEl.value.trim() === "";
+  chatSendBtn.disabled = chatSending || !chatJoined || !typed;
+  chatEditBtn.disabled = chatSending || !typed || chatMine === undefined;
 };
 
 /// Whether this identity is in the room decides what it can do there: only a
@@ -1016,6 +1027,10 @@ const showChatRoom = async (notice?: string) => {
   chatTextEl.disabled = !joined;
   chatJoined = joined;
   updateSendState();
+
+  chatMine = room.messages
+    .filter((message: any) => message.from.toText() === mine)
+    .at(-1)?.sequence as bigint | undefined;
 
   const newest = room.messages.at(-1)?.at as bigint | undefined;
   if (chatIsBeingRead() && newest !== undefined && newest !== chatSeenAt) {
@@ -1082,6 +1097,20 @@ chatSendBtn.addEventListener("click", async () => {
   }
 });
 
+chatEditBtn.addEventListener("click", async () => {
+  const sequence = chatMine;
+  if (sequence === undefined) {
+    return;
+  }
+  await whileBusy(chatEditBtn, "Editing…", async () => {
+    const actor = await testAppActor();
+    await actor.chat_edit(sequence, chatTextEl.value.trim());
+    chatTextEl.value = "";
+    await showChatRoom();
+  });
+  updateSendState();
+});
+
 chatTextEl.addEventListener("input", updateSendState);
 
 // Nothing tells the page that someone else has sent something, so it asks.
@@ -1107,12 +1136,83 @@ chatTextEl.addEventListener("keydown", (event) => {
   }
 });
 
-const SERIES = [
-  ["sent", "#888"],
-  ["accepted", "#2a7"],
-  ["received", "#27a"],
-  ["dropped", "#a33"],
+/// The stages a notification passes through, in order. Everything else a
+/// bucket counts is either delay or loss, and reads beneath the funnel.
+const STAGES = [
+  ["queued", "send()"],
+  ["accepted", "accepted"],
+  ["received", "received"],
+  ["opened", "opened"],
 ] as const;
+
+interface Counts {
+  queued: bigint;
+  accepted: bigint;
+  received: bigint;
+  opened: bigint;
+  dropped: bigint;
+  deferred: bigint;
+}
+
+const add = (into: Counts, from: Counts): Counts => ({
+  queued: into.queued + from.queued,
+  accepted: into.accepted + from.accepted,
+  received: into.received + from.received,
+  opened: into.opened + from.opened,
+  dropped: into.dropped + from.dropped,
+  deferred: into.deferred + from.deferred,
+});
+
+const NOTHING: Counts = {
+  queued: BigInt(0),
+  accepted: BigInt(0),
+  received: BigInt(0),
+  opened: BigInt(0),
+  dropped: BigInt(0),
+  deferred: BigInt(0),
+};
+
+const share = (count: bigint, of: bigint): number =>
+  of === BigInt(0) ? 0 : (Number(count) / Number(of)) * 100;
+
+const rate = (value: number): string => `${value.toFixed(1)}%`;
+
+/// A window still taking notifications says so rather than reporting its gaps
+/// as losses: what is still moving has not been lost yet.
+const funnelHtml = (
+  counts: Counts,
+  settled: boolean,
+  title: string,
+): string => {
+  const entered = counts.queued;
+  const moving =
+    counts.queued - counts.received - counts.dropped > BigInt(0)
+      ? counts.queued - counts.received - counts.dropped
+      : BigInt(0);
+
+  const rows = STAGES.map(([field, label], stage) => {
+    const count = counts[field];
+    const of = share(count, entered);
+    const lost = stage === 0 ? undefined : counts[STAGES[stage - 1][0]] - count;
+    const drop =
+      settled && lost !== undefined && lost > BigInt(0)
+        ? `<span style="color: #a33">&darr; ${lost}</span>`
+        : "";
+    return `<div style="display: flex; align-items: center; gap: 0.5em; font-family: monospace">
+      <span style="width: 6em">${label}</span>
+      <span style="width: 3em; text-align: right">${count}</span>
+      <span style="background: #5b5bd6; height: 0.9em; width: ${Math.max(of, 0.5)}%"></span>
+      <span>${rate(of)}</span>
+      ${drop}
+    </div>`;
+  }).join("");
+
+  const note = settled
+    ? ""
+    : `<p style="font-family: monospace">${moving} still moving · ${counts.deferred} deferral(s)</p>`;
+
+  return `<p><strong>${title}</strong> · conversion ${rate(share(counts.opened, entered))}${settled ? "" : " so far"}</p>${rows}${note}`;
+};
 
 const showMetrics = async () => {
   const actor = await testAppActor();
@@ -1120,35 +1220,31 @@ const showMetrics = async () => {
 
   const hours = Number(metricsWindowEl.value);
   // The page targets ES2019, so no BigInt literals.
-  const cutoff =
-    BigInt(Date.now()) * BigInt(1_000_000) -
-    BigInt(hours) * BigInt(3_600_000_000_000);
+  const hour = BigInt(3_600_000_000_000);
+  const now = BigInt(Date.now()) * BigInt(1_000_000);
+  const cutoff = now - BigInt(hours) * hour;
   const buckets = metrics.hours.filter((bucket: any) => bucket.start >= cutoff);
+  const current = now - (now % hour);
 
-  const height = 80;
-  const width = 16;
-  const tallest = Math.max(
-    1,
-    ...buckets.flatMap((bucket: any) =>
-      SERIES.map(([field]) => Number(bucket[field])),
-    ),
-  );
-  const bars = buckets
-    .map((bucket: any, hour: number) =>
-      SERIES.map(([field, colour], series) => {
-        const bar = (Number(bucket[field]) / tallest) * height;
-        const x = hour * width + series * 3;
-        return `<rect x="${x}" y="${height - bar}" width="3" height="${bar}" fill="${colour}" />`;
-      }).join(""),
-    )
+  const counts = buckets
+    .map((bucket: any) => bucket.counts as Counts)
+    .reduce(add, NOTHING);
+  // Everything but the hour that is still taking notifications has settled,
+  // near enough: a notification lives as long as the window its app gave it.
+  const settled = !buckets.some((bucket: any) => bucket.start >= current);
+
+  const funnels = (metrics.funnels as { name: string; counts: Counts }[])
+    .map((funnel) => funnelHtml(funnel.counts, true, `funnel ${funnel.name}`))
     .join("");
-  metricsChartEl.innerHTML = `<svg width="${Math.max(1, buckets.length) * width}" height="${height}" style="border-bottom: 1px solid #ccc">${bars}</svg>`;
+
+  metricsFunnelEl.innerHTML =
+    funnelHtml(counts, settled, `last ${hours}h`) + funnels;
 
   const misconfigured =
     metrics.misconfigured.length > 0
       ? `, misconfigured: ${Object.keys(metrics.misconfigured[0].why)[0]}`
       : "";
-  metricsSummaryEl.innerText = `backlog ${metrics.backlog}, ${buckets.length} hour(s) with traffic in the last ${hours}h, tallest bar ${tallest}${misconfigured}`;
+  metricsSummaryEl.innerText = `backlog ${metrics.backlog}, ${buckets.length} hour(s) with traffic${misconfigured}`;
 };
 
 metricsRefreshBtn.addEventListener("click", () => {
