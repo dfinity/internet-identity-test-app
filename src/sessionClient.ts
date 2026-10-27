@@ -647,6 +647,27 @@ export const mountSessionPanel = (options: {
     );
   });
 
+  // Read rather than asked, so it answers without a screen. It is also the only
+  // way to see that a grant landed where the ceremony said it did, and that a
+  // withdrawal below actually took.
+  onClick("sessionConsentStatusBtn", async () => {
+    log("notification consent status requested");
+    const { granted } = await handle.client.getNotificationConsentStatus();
+    setText("notificationConsent", granted ? "yes" : "no");
+    log(
+      granted
+        ? "notification consent is recorded as granted"
+        : "no notification consent is recorded",
+    );
+  });
+
+  onClick("sessionConsentRevokeBtn", async () => {
+    log("notification consent withdrawal requested");
+    await handle.client.revokeNotificationConsent();
+    setText("notificationConsent", "no");
+    log("notification consent withdrawn");
+  });
+
   // `prompt` and `hint` are baked into the authorize URL at construction, so a
   // silent re-issue is its own client sharing this one's storage.
   onClick("sessionSilentBtn", async () => {
