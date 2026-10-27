@@ -135,7 +135,7 @@ export const authWithII = async ({
       identity,
       authnMethod: "passkey",
       icrc3Attributes: icrc3Attributes ?? undefined,
-      notificationConsent,
+      notificationConsent: notificationConsent?.granted,
     };
   }
 

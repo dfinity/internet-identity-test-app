@@ -475,7 +475,8 @@ const renderRedirectIdentity = async (
         : undefined,
   });
   if (askNotificationConsentEl.checked) {
-    showNotificationConsent(await handle.client.requestNotificationConsent());
+    const { granted } = await handle.client.requestNotificationConsent();
+    showNotificationConsent(granted);
   }
 };
 

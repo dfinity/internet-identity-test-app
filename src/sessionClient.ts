@@ -638,7 +638,7 @@ export const mountSessionPanel = (options: {
   // a screen, and that case is otherwise invisible.
   onClick("sessionNotifyBtn", async () => {
     log("notification consent requested");
-    const granted = await handle.client.requestNotificationConsent();
+    const { granted } = await handle.client.requestNotificationConsent();
     setText("notificationConsent", granted ? "yes" : "no");
     log(
       granted
