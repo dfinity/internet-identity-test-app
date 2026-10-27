@@ -1,5 +1,12 @@
 canisters:
   - name: test_app
+    settings:
+      # Read by the notification library. The Internet Identity a test drives
+      # this app against is chosen in the frontend, which tells the canister on
+      # every join, so no sender is configured here: until a test names one,
+      # this canister sends nothing.
+      environment_variables:
+        notification_origin: "https://vt36r-2qaaa-aaaad-aad5a-cai.icp0.io"
     build:
       steps:
         - type: script
